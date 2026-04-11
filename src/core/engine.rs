@@ -7,6 +7,7 @@ use crate::network::runtime::{
     spawn_safe_client_controller, ClientControlCommand, ClientRebuildReason, ClientRuntimeConfig,
     SafeClientFactory, SharedNetworkClient,
 };
+use crate::network::tor::TorController;
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
 use rand::random;
@@ -22,21 +23,28 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let initial_jobs = build_jobs(&paths, config.rounds);
     let initial_total_jobs = initial_jobs.len();
 
-    let client_factory = SafeClientFactory::new(ClientRuntimeConfig {
+    let mut client_factory = SafeClientFactory::new(ClientRuntimeConfig {
         base_url: config.base_url.clone(),
         timeout_ms: config.timeout_ms,
         profile: config.client_profile,
         speed_mode: config.speed_mode,
         workers: config.workers,
+        tor_proxy: config.tor_proxy.clone(),
     });
     let (client_tx, client_rx) = client_factory.channel()?;
     let (client_command_tx, client_command_rx) = mpsc::channel(4);
     let client_rebuilds = Arc::new(AtomicUsize::new(0));
+
+    let tor_controller = config.tor_control.clone().map(|control_address| {
+        TorController::new(control_address, config.tor_password.clone())
+    });
+
     let client_controller = spawn_safe_client_controller(
         client_command_rx,
         client_tx,
         client_factory,
         Arc::clone(&client_rebuilds),
+        tor_controller,
     );
 
     let soft_404_fingerprint = if config.disable_soft_404_filter {

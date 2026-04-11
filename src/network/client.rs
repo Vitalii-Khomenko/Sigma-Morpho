@@ -2,7 +2,7 @@ use crate::core::metrics::ResponseMetric;
 use crate::core::speed::SpeedMode;
 use crate::network::profile::ClientProfile;
 use anyhow::{Context, Result};
-use reqwest::Client;
+use reqwest::{Client, Proxy};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
@@ -21,15 +21,23 @@ impl NetworkClient {
         profile: ClientProfile,
         speed_mode: SpeedMode,
         workers: usize,
+        tor_proxy: Option<String>,
     ) -> Result<Self> {
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .user_agent(profile.user_agent())
             .default_headers(profile.default_headers())
             .pool_max_idle_per_host(speed_mode.pool_max_idle_per_host(workers))
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .context("Failed to build HTTP client")?;
+            .redirect(reqwest::redirect::Policy::none());
+
+        if let Some(proxy_url) = tor_proxy {
+            let proxy = Proxy::all(&proxy_url)
+                .with_context(|| format!("Invalid proxy URL: {}", proxy_url))?;
+            builder = builder.proxy(proxy);
+        }
+
+        let client = builder.build().context("Failed to build HTTP client")?;
+
 
         Ok(Self { client, base_url })
     }

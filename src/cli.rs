@@ -92,6 +92,15 @@ struct CliArgs {
 
     #[arg(long)]
     authorized_target: bool,
+
+    #[arg(long, value_name = "URL")]
+    tor_proxy: Option<String>,
+
+    #[arg(long, value_name = "ADDRESS")]
+    tor_control: Option<String>,
+
+    #[arg(long, value_name = "PASSWORD")]
+    tor_password: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +130,9 @@ pub struct AppConfig {
     pub scenario: Option<ScenarioKind>,
     pub compare_profiles: bool,
     pub compare_profiles_live: bool,
+    pub tor_proxy: Option<String>,
+    pub tor_control: Option<String>,
+    pub tor_password: Option<String>,
 }
 
 impl AppConfig {
@@ -206,6 +218,9 @@ impl AppConfig {
             scenario: args.scenario,
             compare_profiles: args.compare_profiles,
             compare_profiles_live: args.compare_profiles_live,
+            tor_proxy: args.tor_proxy,
+            tor_control: args.tor_control,
+            tor_password: args.tor_password,
         })
     }
 
@@ -446,6 +461,9 @@ mod tests {
             scenario: None,
             compare_profiles: false,
             compare_profiles_live: false,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
         };
 
         let paths = cfg.load_wordlist()?;
@@ -492,6 +510,9 @@ mod tests {
             scenario: None,
             compare_profiles: false,
             compare_profiles_live: false,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
         };
 
         let paths = cfg.load_wordlist()?;
@@ -532,6 +553,9 @@ mod tests {
             scenario: Some(ScenarioKind::RateLimit),
             compare_profiles: true,
             compare_profiles_live: false,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
         };
 
         assert_eq!(cfg.scenario, Some(ScenarioKind::RateLimit));
@@ -567,6 +591,9 @@ mod tests {
             scenario: None,
             compare_profiles: false,
             compare_profiles_live: false,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
         };
 
         assert_eq!(
@@ -603,6 +630,9 @@ mod tests {
             scenario: None,
             compare_profiles: false,
             compare_profiles_live: true,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
         };
 
         let profiled = cfg.for_profile(ClientProfile::MobileSafari);
