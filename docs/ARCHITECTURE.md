@@ -8,7 +8,8 @@
 4. Each worker executes a request and emits a `ResponseMetric`.
 5. The neuro actor consumes metrics, updates the RSNN, and computes the next shared delay.
 6. Workers observe delay changes through a watch channel before subsequent requests.
-7. Final summaries merge HTTP-level and neuro-level telemetry.
+7. Workers also read the active HTTP client through a watch channel, which keeps the transport layer decoupled from worker lifetime.
+8. Final summaries merge HTTP-level and neuro-level telemetry.
 
 ## Why actor isolation matters
 

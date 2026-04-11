@@ -3,6 +3,9 @@ use crate::core::findings::{FindingDecision, FindingWriter, FindingsConfig, Soft
 use crate::core::metrics::{NeuroTelemetry, ResponseMetric, RunSummary};
 use crate::core::simulation::SafeActionSimulator;
 use crate::network::client::NetworkClient;
+use crate::network::runtime::{
+    spawn_safe_client_controller, ClientRuntimeConfig, SafeClientFactory, SharedNetworkClient,
+};
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
 use rand::random;
@@ -18,17 +21,23 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let initial_jobs = build_jobs(&paths, config.rounds);
     let initial_total_jobs = initial_jobs.len();
 
-    let client = Arc::new(NetworkClient::new(
-        config.base_url.clone(),
-        config.timeout_ms,
-        config.client_profile,
-        config.speed_mode,
-        config.workers,
-    )?);
+    let client_factory = SafeClientFactory::new(ClientRuntimeConfig {
+        base_url: config.base_url.clone(),
+        timeout_ms: config.timeout_ms,
+        profile: config.client_profile,
+        speed_mode: config.speed_mode,
+        workers: config.workers,
+    });
+    let (client_tx, client_rx) = client_factory.channel()?;
+    let (client_command_tx, client_command_rx) = mpsc::channel(4);
+    let client_controller =
+        spawn_safe_client_controller(client_command_rx, client_tx, client_factory);
+
     let soft_404_fingerprint = if config.disable_soft_404_filter {
         None
     } else {
-        probe_soft_404(&client).await
+        let probe_client = client_rx.borrow().clone();
+        probe_soft_404(probe_client.as_ref()).await
     };
     let findings_config = FindingsConfig::new(
         config.findings_file.clone(),
@@ -58,7 +67,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
 
     let mut worker_handles = Vec::with_capacity(config.workers);
     for worker_id in 0..config.workers {
-        let worker_client = Arc::clone(&client);
+        let worker_client_rx = client_rx.clone();
         let worker_queue = Arc::clone(&queue);
         let worker_metric_tx = metric_tx.clone();
         let worker_delay_rx = delay_rx.clone();
@@ -66,7 +75,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         let handle = tokio::spawn(async move {
             worker_loop(
                 worker_id,
-                worker_client,
+                worker_client_rx,
                 worker_queue,
                 worker_metric_tx,
                 worker_delay_rx,
@@ -78,6 +87,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     }
 
     drop(metric_tx);
+    drop(client_command_tx);
 
     let mut summary = RunSummary::default();
     summary.client_profile = config.client_profile.as_str().to_string();
@@ -92,6 +102,9 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     }
 
     let neuro = actor_handle.await.context("Neuro actor join failed")??;
+    client_controller
+        .await
+        .context("Client controller join failed")??;
     summary.apply_neuro(neuro);
     summary.final_delay_ms = *delay_rx.borrow();
     summary.discovered_jobs = queue.scheduled_total.load(Ordering::Relaxed) as u64;
@@ -229,7 +242,7 @@ impl JobQueue {
 #[allow(clippy::too_many_arguments)]
 async fn worker_loop(
     _worker_id: usize,
-    client: Arc<NetworkClient>,
+    client_rx: watch::Receiver<SharedNetworkClient>,
     queue: Arc<JobQueue>,
     metric_tx: mpsc::Sender<ResponseMetric>,
     delay_rx: watch::Receiver<u64>,
@@ -244,6 +257,7 @@ async fn worker_loop(
         let delay_ms = *delay_rx.borrow();
         sleep(Duration::from_millis(delay_ms)).await;
 
+        let client = client_rx.borrow().clone();
         let metric = client.execute_path(&job.path).await;
         let discovered = queue.maybe_enqueue_children(&job, &metric).await;
         if discovered > 0 {

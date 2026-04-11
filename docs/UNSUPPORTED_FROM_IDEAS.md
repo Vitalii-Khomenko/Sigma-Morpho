@@ -18,6 +18,7 @@ This file records the parts of [`Ideas.md`](../Ideas.md) that are intentionally 
 
 - simulation-only advisory events for `RotateUserAgent` and `RebuildCircuit`
 - fixed, non-rotating client profiles for comparative research
+- safe active-client control infrastructure using `watch`, limited to rebuilding the same fixed-profile client without changing identity
 - local replay scenarios for studying rate limits, tarpits, and mixed protection signals
 - adaptive pacing, telemetry, and reporting for authorized defensive research
 

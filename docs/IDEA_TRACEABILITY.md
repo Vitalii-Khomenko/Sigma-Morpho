@@ -24,6 +24,8 @@ This file maps `Ideas.md` to the implemented project state.
   Implemented through recent-window burst analysis for latency, blocks, and 404 density.
 - “RotateUserAgent” and “RebuildTorCircuit”
   Reframed as simulation-only advisory events used for telemetry and offline analysis.
+- “hot-swap active client via watch channels”
+  Implemented as safe transport-control infrastructure for rebuilding the same fixed client profile and connection pool, not as identity rotation.
 
 ## Intentionally not implemented
 
