@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 use crate::core::metrics::ResponseMetric;
 use crate::core::profile::AdaptiveProfile;
 use rand::Rng;
+#[cfg(test)]
+use rand::SeedableRng;
 
 use super::encoder::{analyze_patterns, encode_metric, EncoderConfig, PatternSummary};
 use super::neuron::LifNeuron;
@@ -70,8 +72,11 @@ pub struct Rsnn {
 
 impl Rsnn {
     pub fn new(cfg: RsnnConfig) -> Self {
+        Self::new_with_rng(cfg, rand::thread_rng())
+    }
+
+    fn new_with_rng<R: Rng>(cfg: RsnnConfig, mut rng: R) -> Self {
         let hidden_size = cfg.hidden_size.max(1);
-        let mut rng = rand::thread_rng();
 
         let hidden_neurons = (0..hidden_size).map(|_| LifNeuron::default()).collect();
 
@@ -127,6 +132,11 @@ impl Rsnn {
             recent_errors: VecDeque::with_capacity(cfg.history_window.max(4)),
             input_trace_ticks: [None, None, None],
         }
+    }
+
+    #[cfg(test)]
+    fn new_seeded(cfg: RsnnConfig, seed: u64) -> Self {
+        Self::new_with_rng(cfg, rand::rngs::StdRng::seed_from_u64(seed))
     }
 
     pub fn process_metric(
@@ -401,7 +411,7 @@ mod tests {
             history_window: 8,
         };
 
-        let mut rsnn = Rsnn::new(cfg.clone());
+        let mut rsnn = Rsnn::new_seeded(cfg.clone(), 7);
         let mut delay = 50;
 
         for step in 0..200 {
@@ -433,14 +443,17 @@ mod tests {
 
     #[test]
     fn repeated_blocking_escalates_into_defensive_profile() {
-        let mut rsnn = Rsnn::new(RsnnConfig {
-            hidden_size: 12,
-            latency_threshold_ms: 250,
-            min_delay_ms: 20,
-            max_delay_ms: 800,
-            learning_rate: 0.1,
-            history_window: 10,
-        });
+        let mut rsnn = Rsnn::new_seeded(
+            RsnnConfig {
+                hidden_size: 12,
+                latency_threshold_ms: 250,
+                min_delay_ms: 20,
+                max_delay_ms: 800,
+                learning_rate: 0.1,
+                history_window: 10,
+            },
+            11,
+        );
 
         let mut delay = 40;
         let mut entered_defensive = false;
@@ -468,14 +481,17 @@ mod tests {
 
     #[test]
     fn stable_success_recovers_toward_baseline() {
-        let mut rsnn = Rsnn::new(RsnnConfig {
-            hidden_size: 10,
-            latency_threshold_ms: 300,
-            min_delay_ms: 25,
-            max_delay_ms: 1000,
-            learning_rate: 0.08,
-            history_window: 10,
-        });
+        let mut rsnn = Rsnn::new_seeded(
+            RsnnConfig {
+                hidden_size: 10,
+                latency_threshold_ms: 300,
+                min_delay_ms: 25,
+                max_delay_ms: 1000,
+                learning_rate: 0.08,
+                history_window: 10,
+            },
+            42,
+        );
 
         let mut delay = 300;
         for _ in 0..6 {
