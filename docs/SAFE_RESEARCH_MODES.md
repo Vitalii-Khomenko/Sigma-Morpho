@@ -11,6 +11,8 @@ When `--simulation-mode` is enabled, the neuro pipeline may emit advisory events
 
 These are simulated only. They are logged, counted, and included in summaries, but they do not modify the active HTTP client, route, identity, or attribution.
 
+If explicitly enabled, Sigma Morpho may rebuild the same fixed-profile HTTP client and connection pool as a safe transport-control operation. This rebuild does not rotate identity and does not change the selected client profile.
+
 ## 2. Fixed client profiles
 
 Sigma Morpho supports fixed per-run client profiles:
@@ -21,6 +23,20 @@ Sigma Morpho supports fixed per-run client profiles:
 - `api-diagnostic`
 
 Each profile changes only static request metadata and conservative timing defaults for the whole run. No mid-run rotation occurs.
+
+## 2.5 Safe client rebuild controls
+
+Sigma Morpho can rebuild the active fixed-profile client in two safe ways:
+
+- manual interval control with `--rebuild-client-every`
+- advisory-triggered rebuilds with `--rebuild-client-on-advisory`
+
+These rebuilds:
+
+- keep the same fixed client profile
+- do not rotate User-Agent identity mid-run
+- do not use Tor or proxies
+- do not change attribution
 
 ## 3. Local replay scenarios
 
@@ -35,7 +51,9 @@ These scenarios feed synthetic `ResponseMetric` sequences into the RSNN and prod
 
 ## 4. Comparative reporting
 
-With `--compare-profiles`, the same scenario is replayed across all fixed profiles. This supports lab research such as:
+With `--compare-profiles`, the same scenario is replayed across all fixed profiles. With `--compare-profiles-live`, the same live target and wordlist are run sequentially across all fixed profiles.
+
+This supports lab research such as:
 
 - how quickly each profile reaches `cautious` or `defensive`
 - how much adaptive delay accumulates

@@ -6,13 +6,15 @@ The project intentionally stays on the safe side of security research. It does n
 
 - simulation-only advisory mode for rotation/circuit actions
 - fixed per-run client profiles
+- safe fixed-profile client rebuild controls
 - local replay scenarios for protection testing
-- comparative reports across profiles in scenario mode
+- comparative reports across profiles in scenario and live mode
 
 ## What is implemented
 
 - Async HTTP workload engine with Tokio + Reqwest
 - Worker pool with actor-style neuro core (`mpsc` in, `watch` out)
+- Safe client controller path for rebuilding the active fixed-profile connection pool
 - LIF neurons with spike history
 - RSNN hidden reservoir with recurrent state
 - STDP-inspired synaptic updates for online adaptation
@@ -75,6 +77,15 @@ cargo run -- \
   --authorized-target
 ```
 
+Live comparison across all fixed profiles:
+
+```bash
+cargo run -- \
+  --base-url http://127.0.0.1:8000 \
+  --wordlist wordlist.txt \
+  --compare-profiles-live
+```
+
 Scenario mode with advisory simulation:
 
 ```bash
@@ -94,10 +105,16 @@ cargo run -- \
   Enables simulation-only advisory events for actions inspired by the research ideas file.
 - `--recursion-depth <n>`
   Enables dynamic directory recursion. When Sigma Morpho gets a directory-like hit, it can enqueue child paths from the seed corpus until depth `n`.
+- `--rebuild-client-every <requests>`
+  Rebuilds the same fixed-profile HTTP client and connection pool at a manual request interval.
+- `--rebuild-client-on-advisory`
+  Rebuilds the same fixed-profile HTTP client when simulation advisories fire. This does not change identity, proxy, or attribution.
 - `--scenario <scenario>`
   Runs a local replay harness without live network requests.
 - `--compare-profiles`
   In scenario mode, executes the same replay across all fixed client profiles.
+- `--compare-profiles-live`
+  In live mode, runs the same target and wordlist sequentially across all fixed client profiles.
 
 ## Documentation
 

@@ -2,6 +2,7 @@ use crate::core::speed::SpeedMode;
 use crate::network::client::NetworkClient;
 use crate::network::profile::ClientProfile;
 use anyhow::Result;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -24,8 +25,25 @@ pub struct SafeClientFactory {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientRebuildReason {
+    ManualInterval,
+    SimulatedRotateAdvisory,
+    SimulatedCircuitAdvisory,
+}
+
+impl ClientRebuildReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ManualInterval => "manual-interval",
+            Self::SimulatedRotateAdvisory => "simulated-rotate-advisory",
+            Self::SimulatedCircuitAdvisory => "simulated-circuit-advisory",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientControlCommand {
-    RebuildConnections,
+    RebuildConnections { reason: ClientRebuildReason },
 }
 
 impl SafeClientFactory {
@@ -58,12 +76,18 @@ pub fn spawn_safe_client_controller(
     mut command_rx: mpsc::Receiver<ClientControlCommand>,
     client_tx: watch::Sender<SharedNetworkClient>,
     factory: SafeClientFactory,
+    rebuild_count: Arc<AtomicUsize>,
 ) -> JoinHandle<Result<()>> {
     tokio::spawn(async move {
         while let Some(command) = command_rx.recv().await {
             match command {
-                ClientControlCommand::RebuildConnections => {
+                ClientControlCommand::RebuildConnections { reason } => {
                     let rebuilt = factory.build_shared()?;
+                    rebuild_count.fetch_add(1, Ordering::Relaxed);
+                    println!(
+                        "[CLIENT] rebuilt fixed-profile transport reason={}",
+                        reason.as_str()
+                    );
                     let _ = client_tx.send(rebuilt);
                 }
             }
@@ -76,11 +100,13 @@ pub fn spawn_safe_client_controller(
 #[cfg(test)]
 mod tests {
     use super::{
-        spawn_safe_client_controller, ClientControlCommand, ClientRuntimeConfig, SafeClientFactory,
+        spawn_safe_client_controller, ClientControlCommand, ClientRebuildReason,
+        ClientRuntimeConfig, SafeClientFactory,
     };
     use crate::core::speed::SpeedMode;
     use crate::network::profile::ClientProfile;
     use anyhow::Result;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tokio::sync::mpsc;
     use url::Url;
@@ -98,16 +124,25 @@ mod tests {
         let initial = client_rx.borrow().clone();
 
         let (command_tx, command_rx) = mpsc::channel(1);
-        let controller = spawn_safe_client_controller(command_rx, client_tx, factory);
+        let rebuild_count = Arc::new(AtomicUsize::new(0));
+        let controller = spawn_safe_client_controller(
+            command_rx,
+            client_tx,
+            factory,
+            Arc::clone(&rebuild_count),
+        );
 
         command_tx
-            .send(ClientControlCommand::RebuildConnections)
+            .send(ClientControlCommand::RebuildConnections {
+                reason: ClientRebuildReason::ManualInterval,
+            })
             .await
             .expect("command send");
         client_rx.changed().await.expect("client update");
         let rebuilt = client_rx.borrow().clone();
 
         assert!(!Arc::ptr_eq(&initial, &rebuilt));
+        assert_eq!(rebuild_count.load(Ordering::Relaxed), 1);
 
         drop(command_tx);
         controller.await??;

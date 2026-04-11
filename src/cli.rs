@@ -38,6 +38,12 @@ struct CliArgs {
     #[arg(long, default_value_t = 50)]
     initial_delay_ms: u64,
 
+    #[arg(long, value_name = "REQUESTS")]
+    rebuild_client_every: Option<usize>,
+
+    #[arg(long)]
+    rebuild_client_on_advisory: bool,
+
     #[arg(long, default_value_t = 25)]
     min_delay_ms: u64,
 
@@ -82,6 +88,9 @@ struct CliArgs {
     compare_profiles: bool,
 
     #[arg(long)]
+    compare_profiles_live: bool,
+
+    #[arg(long)]
     authorized_target: bool,
 }
 
@@ -92,8 +101,12 @@ pub struct AppConfig {
     pub workers: usize,
     pub rounds: usize,
     pub recursion_depth: u8,
+    pub requested_timeout_ms: u64,
     pub timeout_ms: u64,
+    pub requested_initial_delay_ms: u64,
     pub initial_delay_ms: u64,
+    pub rebuild_client_every: Option<usize>,
+    pub rebuild_client_on_advisory: bool,
     pub min_delay_ms: u64,
     pub max_delay_ms: u64,
     pub latency_threshold_ms: u64,
@@ -107,6 +120,7 @@ pub struct AppConfig {
     pub simulation_mode: bool,
     pub scenario: Option<ScenarioKind>,
     pub compare_profiles: bool,
+    pub compare_profiles_live: bool,
 }
 
 impl AppConfig {
@@ -135,6 +149,19 @@ impl AppConfig {
         if args.compare_profiles && args.scenario.is_none() {
             bail!("--compare-profiles can only be used together with --scenario");
         }
+        if args.compare_profiles_live && args.scenario.is_some() {
+            bail!("--compare-profiles-live cannot be used together with --scenario");
+        }
+        if args.compare_profiles && args.compare_profiles_live {
+            bail!("Use either --compare-profiles or --compare-profiles-live, not both");
+        }
+        if args
+            .rebuild_client_every
+            .map(|interval| interval == 0)
+            .unwrap_or(false)
+        {
+            bail!("--rebuild-client-every must be at least 1 when provided");
+        }
 
         let raw_base_url = match (&args.base_url, args.scenario) {
             (Some(base_url), _) => base_url.clone(),
@@ -159,8 +186,12 @@ impl AppConfig {
             workers: args.workers,
             rounds: args.rounds,
             recursion_depth: args.recursion_depth,
+            requested_timeout_ms: args.timeout_ms,
             timeout_ms: args.client_profile.adjusted_timeout(args.timeout_ms),
+            requested_initial_delay_ms: args.initial_delay_ms,
             initial_delay_ms,
+            rebuild_client_every: args.rebuild_client_every,
+            rebuild_client_on_advisory: args.rebuild_client_on_advisory,
             min_delay_ms: args.min_delay_ms,
             max_delay_ms: args.max_delay_ms,
             latency_threshold_ms: args.latency_threshold_ms,
@@ -174,7 +205,48 @@ impl AppConfig {
             simulation_mode: args.simulation_mode,
             scenario: args.scenario,
             compare_profiles: args.compare_profiles,
+            compare_profiles_live: args.compare_profiles_live,
         })
+    }
+
+    pub fn for_profile(&self, profile: ClientProfile) -> Self {
+        let mut next = self.clone();
+        next.client_profile = profile;
+        next.timeout_ms = profile.adjusted_timeout(self.requested_timeout_ms);
+        next.initial_delay_ms = profile.adjusted_initial_delay(
+            self.requested_initial_delay_ms,
+            self.min_delay_ms,
+            self.max_delay_ms,
+        );
+        next.findings_file = self.findings_file_for_profile(profile);
+        next
+    }
+
+    pub fn findings_file_for_profile(&self, profile: ClientProfile) -> PathBuf {
+        let suffix = profile.as_str();
+        let parent = self
+            .findings_file
+            .parent()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_default();
+        let stem = self
+            .findings_file
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("findings");
+        let ext = self
+            .findings_file
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+
+        let file_name = if ext.is_empty() {
+            format!("{stem}-{suffix}")
+        } else {
+            format!("{stem}-{suffix}.{ext}")
+        };
+
+        parent.join(file_name)
     }
 
     pub fn load_wordlist(&self) -> Result<Vec<String>> {
@@ -354,8 +426,12 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            requested_timeout_ms: 1000,
             timeout_ms: 1000,
+            requested_initial_delay_ms: 25,
             initial_delay_ms: 25,
+            rebuild_client_every: None,
+            rebuild_client_on_advisory: false,
             min_delay_ms: 25,
             max_delay_ms: 100,
             latency_threshold_ms: 500,
@@ -369,6 +445,7 @@ mod tests {
             simulation_mode: false,
             scenario: None,
             compare_profiles: false,
+            compare_profiles_live: false,
         };
 
         let paths = cfg.load_wordlist()?;
@@ -395,8 +472,12 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            requested_timeout_ms: 1000,
             timeout_ms: 1000,
+            requested_initial_delay_ms: 25,
             initial_delay_ms: 25,
+            rebuild_client_every: None,
+            rebuild_client_on_advisory: false,
             min_delay_ms: 25,
             max_delay_ms: 100,
             latency_threshold_ms: 500,
@@ -410,6 +491,7 @@ mod tests {
             simulation_mode: false,
             scenario: None,
             compare_profiles: false,
+            compare_profiles_live: false,
         };
 
         let paths = cfg.load_wordlist()?;
@@ -430,8 +512,12 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            requested_timeout_ms: 1000,
             timeout_ms: 1000,
+            requested_initial_delay_ms: 50,
             initial_delay_ms: 50,
+            rebuild_client_every: None,
+            rebuild_client_on_advisory: false,
             min_delay_ms: 25,
             max_delay_ms: 250,
             latency_threshold_ms: 500,
@@ -445,11 +531,84 @@ mod tests {
             simulation_mode: true,
             scenario: Some(ScenarioKind::RateLimit),
             compare_profiles: true,
+            compare_profiles_live: false,
         };
 
         assert_eq!(cfg.scenario, Some(ScenarioKind::RateLimit));
         assert!(cfg.compare_profiles);
         assert!(cfg.simulation_mode);
+    }
+
+    #[test]
+    fn findings_file_suffixes_by_profile() {
+        let cfg = AppConfig {
+            base_url: Url::parse("http://127.0.0.1:8000").unwrap(),
+            wordlist: "wordlist.txt".into(),
+            workers: 1,
+            rounds: 1,
+            recursion_depth: 0,
+            requested_timeout_ms: 1000,
+            timeout_ms: 1000,
+            requested_initial_delay_ms: 50,
+            initial_delay_ms: 50,
+            rebuild_client_every: Some(100),
+            rebuild_client_on_advisory: true,
+            min_delay_ms: 25,
+            max_delay_ms: 250,
+            latency_threshold_ms: 500,
+            findings_file: "reports/findings.txt".into(),
+            interesting_statuses: vec![200, 403],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
+            client_profile: ClientProfile::ResearchDefault,
+            simulation_mode: true,
+            scenario: None,
+            compare_profiles: false,
+            compare_profiles_live: false,
+        };
+
+        assert_eq!(
+            cfg.findings_file_for_profile(ClientProfile::BrowserDesktop),
+            PathBuf::from("reports/findings-browser-desktop.txt")
+        );
+    }
+
+    #[test]
+    fn for_profile_recalculates_adjusted_timing() {
+        let cfg = AppConfig {
+            base_url: Url::parse("http://127.0.0.1:8000").unwrap(),
+            wordlist: "wordlist.txt".into(),
+            workers: 1,
+            rounds: 1,
+            recursion_depth: 0,
+            requested_timeout_ms: 1000,
+            timeout_ms: 1000,
+            requested_initial_delay_ms: 50,
+            initial_delay_ms: 50,
+            rebuild_client_every: None,
+            rebuild_client_on_advisory: false,
+            min_delay_ms: 25,
+            max_delay_ms: 250,
+            latency_threshold_ms: 500,
+            findings_file: "findings.txt".into(),
+            interesting_statuses: vec![200],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
+            client_profile: ClientProfile::ResearchDefault,
+            simulation_mode: false,
+            scenario: None,
+            compare_profiles: false,
+            compare_profiles_live: true,
+        };
+
+        let profiled = cfg.for_profile(ClientProfile::MobileSafari);
+        assert_eq!(profiled.timeout_ms, 1750);
+        assert_eq!(profiled.initial_delay_ms, 90);
+        assert_eq!(profiled.client_profile, ClientProfile::MobileSafari);
     }
 
     #[test]

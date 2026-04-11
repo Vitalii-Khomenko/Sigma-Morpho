@@ -1,0 +1,207 @@
+[*] Sigma Morpho live profile comparison started
+[*] Target: http://10.129.70.246/
+[*] Workload: 7 seed paths x 1 rounds, workers: 6, recursion depth: 0
+[*] Running profile: research-default
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[PROGRESS] processed=7/7 (100.00%) delay=0ms profile=baseline
+
+===== Sigma Morpho Summary =====
+Elapsed: 593.60ms
+Client profile: research-default
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-48-24_live-compare-smoke_10.129.70.246/findings-research-default.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 7
+Discovered jobs: 7
+2xx: 0
+3xx: 0
+4xx: 7
+404s: 7
+Protective block signals (403/429/503): 0
+5xx: 0
+Transport errors: 0
+Avg latency: 210.29 ms
+Min latency: 155 ms
+Max latency: 262 ms
+Total body bytes: 1925
+Final adaptive delay: 0 ms
+Final adaptive profile: baseline
+Neuro decisions: 7
+Throttle increases: 0
+Throttle decreases: 0
+Cautious entries: 0
+Defensive entries: 0
+Baseline recoveries: 0
+Latency burst events: 0
+Block burst events: 0
+404 burst events: 0
+Logged findings: 0
+Suppressed soft-404 matches: 0
+Client rebuilds: 2
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+
+[*] Running profile: browser-desktop
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[PROGRESS] processed=7/7 (100.00%) delay=0ms profile=baseline
+
+===== Sigma Morpho Summary =====
+Elapsed: 583.11ms
+Client profile: browser-desktop
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-48-24_live-compare-smoke_10.129.70.246/findings-browser-desktop.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 7
+Discovered jobs: 7
+2xx: 0
+3xx: 0
+4xx: 7
+404s: 7
+Protective block signals (403/429/503): 0
+5xx: 0
+Transport errors: 0
+Avg latency: 217.00 ms
+Min latency: 118 ms
+Max latency: 251 ms
+Total body bytes: 1925
+Final adaptive delay: 0 ms
+Final adaptive profile: baseline
+Neuro decisions: 7
+Throttle increases: 0
+Throttle decreases: 1
+Cautious entries: 0
+Defensive entries: 0
+Baseline recoveries: 0
+Latency burst events: 0
+Block burst events: 0
+404 burst events: 0
+Logged findings: 0
+Suppressed soft-404 matches: 0
+Client rebuilds: 2
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+
+[*] Running profile: mobile-safari
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[PROGRESS] processed=7/7 (100.00%) delay=0ms profile=baseline
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+
+===== Sigma Morpho Summary =====
+Elapsed: 595.04ms
+Client profile: mobile-safari
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-48-24_live-compare-smoke_10.129.70.246/findings-mobile-safari.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 7
+Discovered jobs: 7
+2xx: 0
+3xx: 0
+4xx: 7
+404s: 7
+Protective block signals (403/429/503): 0
+5xx: 0
+Transport errors: 0
+Avg latency: 172.43 ms
+Min latency: 71 ms
+Max latency: 224 ms
+Total body bytes: 1925
+Final adaptive delay: 0 ms
+Final adaptive profile: baseline
+Neuro decisions: 7
+Throttle increases: 0
+Throttle decreases: 1
+Cautious entries: 0
+Defensive entries: 0
+Baseline recoveries: 0
+Latency burst events: 0
+Block burst events: 0
+404 burst events: 0
+Logged findings: 0
+Suppressed soft-404 matches: 0
+Client rebuilds: 2
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+
+[*] Running profile: api-diagnostic
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+[PROGRESS] processed=7/7 (100.00%) delay=0ms profile=baseline
+[CLIENT] rebuilt fixed-profile transport reason=manual-interval
+
+===== Sigma Morpho Summary =====
+Elapsed: 647.96ms
+Client profile: api-diagnostic
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-48-24_live-compare-smoke_10.129.70.246/findings-api-diagnostic.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 7
+Discovered jobs: 7
+2xx: 0
+3xx: 0
+4xx: 7
+404s: 7
+Protective block signals (403/429/503): 0
+5xx: 0
+Transport errors: 0
+Avg latency: 222.57 ms
+Min latency: 95 ms
+Max latency: 272 ms
+Total body bytes: 1925
+Final adaptive delay: 0 ms
+Final adaptive profile: baseline
+Neuro decisions: 7
+Throttle increases: 0
+Throttle decreases: 1
+Cautious entries: 0
+Defensive entries: 0
+Baseline recoveries: 0
+Latency burst events: 0
+Block burst events: 0
+404 burst events: 0
+Logged findings: 0
+Suppressed soft-404 matches: 0
+Client rebuilds: 2
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+
+
+===== Sigma Morpho Live Profile Comparison =====
+Target: http://10.129.70.246/
+
+Profile: research-default
+Requests: 7, Avg latency: 210.29 ms, Final delay: 0 ms
+Findings: 0, Blocks: 0, Transport errors: 0, Client rebuilds: 2
+Simulated actions: 0, Final profile: baseline
+
+Profile: browser-desktop
+Requests: 7, Avg latency: 217.00 ms, Final delay: 0 ms
+Findings: 0, Blocks: 0, Transport errors: 0, Client rebuilds: 2
+Simulated actions: 0, Final profile: baseline
+
+Profile: mobile-safari
+Requests: 7, Avg latency: 172.43 ms, Final delay: 0 ms
+Findings: 0, Blocks: 0, Transport errors: 0, Client rebuilds: 2
+Simulated actions: 0, Final profile: baseline
+
+Profile: api-diagnostic
+Requests: 7, Avg latency: 222.57 ms, Final delay: 0 ms
+Findings: 0, Blocks: 0, Transport errors: 0, Client rebuilds: 2
+Simulated actions: 0, Final profile: baseline
+

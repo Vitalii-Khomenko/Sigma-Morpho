@@ -54,8 +54,11 @@ impl SafeActionSimulator {
         {
             self.last_rotate_tick = tick;
             self.push_log(format!(
-                "[SIMULATION] {} triggered by repeated protective blocks at {}",
+                "[SIMULATION] {} profile={} status={} latency={}ms path={}",
                 SimulatedAction::RotateUserAgent.as_str(),
+                decision.profile.as_str(),
+                metric.status,
+                metric.latency_ms,
                 metric.path
             ));
             actions.push(SimulatedAction::RotateUserAgent);
@@ -68,8 +71,11 @@ impl SafeActionSimulator {
         {
             self.last_rebuild_tick = tick;
             self.push_log(format!(
-                "[SIMULATION] {} triggered by defensive escalation at {}",
+                "[SIMULATION] {} profile={} status={} latency={}ms path={}",
                 SimulatedAction::RebuildCircuit.as_str(),
+                decision.profile.as_str(),
+                metric.status,
+                metric.latency_ms,
                 metric.path
             ));
             actions.push(SimulatedAction::RebuildCircuit);

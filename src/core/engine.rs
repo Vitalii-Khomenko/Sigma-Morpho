@@ -4,7 +4,8 @@ use crate::core::metrics::{NeuroTelemetry, ResponseMetric, RunSummary};
 use crate::core::simulation::SafeActionSimulator;
 use crate::network::client::NetworkClient;
 use crate::network::runtime::{
-    spawn_safe_client_controller, ClientRuntimeConfig, SafeClientFactory, SharedNetworkClient,
+    spawn_safe_client_controller, ClientControlCommand, ClientRebuildReason, ClientRuntimeConfig,
+    SafeClientFactory, SharedNetworkClient,
 };
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
@@ -30,8 +31,13 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     });
     let (client_tx, client_rx) = client_factory.channel()?;
     let (client_command_tx, client_command_rx) = mpsc::channel(4);
-    let client_controller =
-        spawn_safe_client_controller(client_command_rx, client_tx, client_factory);
+    let client_rebuilds = Arc::new(AtomicUsize::new(0));
+    let client_controller = spawn_safe_client_controller(
+        client_command_rx,
+        client_tx,
+        client_factory,
+        Arc::clone(&client_rebuilds),
+    );
 
     let soft_404_fingerprint = if config.disable_soft_404_filter {
         None
@@ -60,10 +66,13 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let actor_handle = spawn_neuro_actor(
         metric_rx,
         delay_tx,
+        client_command_tx.clone(),
         &config,
         Arc::clone(&queue.scheduled_total),
         findings_config,
     );
+    let processed_total = Arc::new(AtomicUsize::new(0));
+    let rebuild_client_every = config.rebuild_client_every;
 
     let mut worker_handles = Vec::with_capacity(config.workers);
     for worker_id in 0..config.workers {
@@ -71,6 +80,8 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         let worker_queue = Arc::clone(&queue);
         let worker_metric_tx = metric_tx.clone();
         let worker_delay_rx = delay_rx.clone();
+        let worker_command_tx = client_command_tx.clone();
+        let worker_processed_total = Arc::clone(&processed_total);
 
         let handle = tokio::spawn(async move {
             worker_loop(
@@ -79,6 +90,9 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
                 worker_queue,
                 worker_metric_tx,
                 worker_delay_rx,
+                worker_command_tx,
+                worker_processed_total,
+                rebuild_client_every,
             )
             .await
         });
@@ -108,6 +122,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     summary.apply_neuro(neuro);
     summary.final_delay_ms = *delay_rx.borrow();
     summary.discovered_jobs = queue.scheduled_total.load(Ordering::Relaxed) as u64;
+    summary.client_rebuilds = client_rebuilds.load(Ordering::Relaxed) as u64;
 
     if summary.total_requests != summary.discovered_jobs {
         println!(
@@ -246,6 +261,9 @@ async fn worker_loop(
     queue: Arc<JobQueue>,
     metric_tx: mpsc::Sender<ResponseMetric>,
     delay_rx: watch::Receiver<u64>,
+    client_command_tx: mpsc::Sender<ClientControlCommand>,
+    processed_total: Arc<AtomicUsize>,
+    rebuild_client_every: Option<usize>,
 ) -> Result<RunSummary> {
     let mut local = RunSummary::default();
 
@@ -270,6 +288,19 @@ async fn worker_loop(
 
         local.record(&metric);
 
+        if let Some(interval) = rebuild_client_every {
+            let processed = processed_total.fetch_add(1, Ordering::Relaxed) + 1;
+            if processed % interval == 0 {
+                let _ = client_command_tx
+                    .send(ClientControlCommand::RebuildConnections {
+                        reason: ClientRebuildReason::ManualInterval,
+                    })
+                    .await;
+            }
+        } else {
+            processed_total.fetch_add(1, Ordering::Relaxed);
+        }
+
         if metric_tx.send(metric).await.is_err() {
             queue.complete().await;
             break;
@@ -284,6 +315,7 @@ async fn worker_loop(
 fn spawn_neuro_actor(
     mut metric_rx: mpsc::Receiver<ResponseMetric>,
     delay_tx: watch::Sender<u64>,
+    client_command_tx: mpsc::Sender<ClientControlCommand>,
     config: &AppConfig,
     scheduled_total: Arc<AtomicUsize>,
     findings_config: FindingsConfig,
@@ -298,6 +330,7 @@ fn spawn_neuro_actor(
     };
     let mut current_delay = config.initial_delay_ms;
     let simulation_mode = config.simulation_mode;
+    let rebuild_client_on_advisory = config.rebuild_client_on_advisory;
     let speed_mode = config.speed_mode;
     let min_delay_ms = config.min_delay_ms;
     let max_delay_ms = config.max_delay_ms;
@@ -323,7 +356,28 @@ fn spawn_neuro_actor(
             let decision = rsnn.process_metric(&neuro_metric, current_delay);
             telemetry.record_decision(&decision);
             for action in simulator.observe(tick, &metric, &decision) {
+                println!(
+                    "[SIMULATION] action={} profile={} status={} latency={}ms path={}",
+                    action.as_str(),
+                    decision.profile.as_str(),
+                    metric.status,
+                    metric.latency_ms,
+                    metric.path
+                );
                 telemetry.record_simulated_action(action);
+                if rebuild_client_on_advisory {
+                    let reason = match action {
+                        crate::core::simulation::SimulatedAction::RotateUserAgent => {
+                            ClientRebuildReason::SimulatedRotateAdvisory
+                        }
+                        crate::core::simulation::SimulatedAction::RebuildCircuit => {
+                            ClientRebuildReason::SimulatedCircuitAdvisory
+                        }
+                    };
+                    let _ = client_command_tx
+                        .blocking_send(ClientControlCommand::RebuildConnections { reason });
+                    telemetry.record_client_rebuild();
+                }
             }
             let mut next_delay = decision.next_delay_ms;
             let action = decision.action;

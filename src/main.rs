@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use sigma_morpho::network::profile::ClientProfile;
 use sigma_morpho::{cli, core};
 use std::time::Instant;
 
@@ -24,20 +25,48 @@ async fn main() -> Result<()> {
             bail!("Wordlist is empty after filtering blank/comment lines.");
         }
 
-        println!("[*] Sigma Morpho started");
-        println!("[*] Target: {}", config.base_url);
-        println!("[*] Client profile: {}", config.client_profile.as_str());
-        println!(
-            "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
-            paths.len(),
-            config.rounds,
-            config.workers,
-            config.recursion_depth
-        );
+        if config.compare_profiles_live {
+            println!("[*] Sigma Morpho live profile comparison started");
+            println!("[*] Target: {}", config.base_url);
+            println!(
+                "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
+                paths.len(),
+                config.rounds,
+                config.workers,
+                config.recursion_depth
+            );
 
-        let summary = core::engine::run(config, paths).await?;
-        let elapsed = started.elapsed();
-        println!("{}", summary.render(elapsed));
+            let mut outcomes = Vec::new();
+            for profile in ClientProfile::ALL {
+                let profile_config = config.for_profile(profile);
+                let profile_started = Instant::now();
+                println!("[*] Running profile: {}", profile.as_str());
+                let summary = core::engine::run(profile_config, paths.clone()).await?;
+                println!("{}", summary.render(profile_started.elapsed()));
+                outcomes.push(core::research::ProfileOutcome { profile, summary });
+            }
+
+            let report = core::research::LiveProfileReport {
+                target: config.base_url.to_string(),
+                outcomes,
+            };
+            println!("{}", report.render());
+        } else {
+            println!("[*] Sigma Morpho started");
+            println!("[*] Target: {}", config.base_url);
+            println!("[*] Client profile: {}", config.client_profile.as_str());
+            println!(
+                "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
+                paths.len(),
+                config.rounds,
+                config.workers,
+                config.recursion_depth
+            );
+
+            let summary = core::engine::run(config, paths).await?;
+            let elapsed = started.elapsed();
+            println!("{}", summary.render(elapsed));
+        }
     }
     Ok(())
 }

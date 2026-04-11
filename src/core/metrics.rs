@@ -49,6 +49,8 @@ pub struct RunSummary {
     pub suppressed_soft_404: u64,
     pub findings_file: String,
     pub soft_404_filter_active: bool,
+    pub client_rebuilds: u64,
+    pub simulated_action_events: u64,
     pub simulated_rotate_advisories: u64,
     pub simulated_circuit_advisories: u64,
     pub simulation_notes: Vec<String>,
@@ -91,6 +93,8 @@ impl Default for RunSummary {
             suppressed_soft_404: 0,
             findings_file: "findings.txt".to_string(),
             soft_404_filter_active: false,
+            client_rebuilds: 0,
+            simulated_action_events: 0,
             simulated_rotate_advisories: 0,
             simulated_circuit_advisories: 0,
             simulation_notes: Vec::new(),
@@ -116,6 +120,8 @@ pub struct NeuroTelemetry {
     pub suppressed_soft_404: u64,
     pub final_delay_ms: u64,
     pub final_profile: AdaptiveProfile,
+    pub client_rebuilds: u64,
+    pub simulated_action_events: u64,
     pub simulated_rotate_advisories: u64,
     pub simulated_circuit_advisories: u64,
     pub simulation_notes: Vec<String>,
@@ -139,6 +145,8 @@ impl Default for NeuroTelemetry {
             suppressed_soft_404: 0,
             final_delay_ms: 0,
             final_profile: AdaptiveProfile::Baseline,
+            client_rebuilds: 0,
+            simulated_action_events: 0,
             simulated_rotate_advisories: 0,
             simulated_circuit_advisories: 0,
             simulation_notes: Vec::new(),
@@ -181,10 +189,15 @@ impl NeuroTelemetry {
     }
 
     pub fn record_simulated_action(&mut self, action: SimulatedAction) {
+        self.simulated_action_events += 1;
         match action {
             SimulatedAction::RotateUserAgent => self.simulated_rotate_advisories += 1,
             SimulatedAction::RebuildCircuit => self.simulated_circuit_advisories += 1,
         }
+    }
+
+    pub fn record_client_rebuild(&mut self) {
+        self.client_rebuilds += 1;
     }
 
     pub fn push_simulation_note(&mut self, note: String) {
@@ -264,6 +277,8 @@ impl RunSummary {
         self.simulation_notes.extend(other.simulation_notes);
         self.logged_findings += other.logged_findings;
         self.suppressed_soft_404 += other.suppressed_soft_404;
+        self.client_rebuilds += other.client_rebuilds;
+        self.simulated_action_events += other.simulated_action_events;
 
         if other.final_delay_ms > 0 {
             self.final_delay_ms = other.final_delay_ms;
@@ -282,6 +297,8 @@ impl RunSummary {
         self.not_found_burst_events += neuro.not_found_burst_events;
         self.logged_findings += neuro.logged_findings;
         self.suppressed_soft_404 += neuro.suppressed_soft_404;
+        self.client_rebuilds += neuro.client_rebuilds;
+        self.simulated_action_events += neuro.simulated_action_events;
         self.simulated_rotate_advisories += neuro.simulated_rotate_advisories;
         self.simulated_circuit_advisories += neuro.simulated_circuit_advisories;
         self.simulation_notes.extend(neuro.simulation_notes);
@@ -369,6 +386,12 @@ impl RunSummary {
             &mut out,
             "Suppressed soft-404 matches: {}",
             self.suppressed_soft_404
+        );
+        let _ = writeln!(&mut out, "Client rebuilds: {}", self.client_rebuilds);
+        let _ = writeln!(
+            &mut out,
+            "Simulated action events: {}",
+            self.simulated_action_events
         );
         let _ = writeln!(
             &mut out,
@@ -467,9 +490,13 @@ mod tests {
         let mut summary = RunSummary::default();
         summary.recursion_depth = 2;
         summary.discovered_jobs = 42;
+        summary.client_rebuilds = 1;
+        summary.simulated_action_events = 3;
 
         let rendered = summary.render(Duration::from_millis(100));
         assert!(rendered.contains("Recursion depth: 2"));
         assert!(rendered.contains("Discovered jobs: 42"));
+        assert!(rendered.contains("Client rebuilds: 1"));
+        assert!(rendered.contains("Simulated action events: 3"));
     }
 }

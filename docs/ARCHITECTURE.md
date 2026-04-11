@@ -33,3 +33,5 @@ This sequence layer gives the RSNN context without turning the tool into a bypas
 ## Safety boundary
 
 The architecture deliberately stops at adaptive throttling. Any feature that would change identity, route, or attribution is excluded.
+
+Safe transport rebuilds are allowed only when they preserve the same fixed client profile and do not rotate identity.

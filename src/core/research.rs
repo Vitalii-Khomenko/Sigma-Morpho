@@ -30,6 +30,16 @@ pub struct ResearchReport {
     pub outcomes: Vec<ScenarioOutcome>,
 }
 
+pub struct LiveProfileReport {
+    pub target: String,
+    pub outcomes: Vec<ProfileOutcome>,
+}
+
+pub struct ProfileOutcome {
+    pub profile: ClientProfile,
+    pub summary: RunSummary,
+}
+
 pub struct ScenarioOutcome {
     pub profile: ClientProfile,
     pub summary: RunSummary,
@@ -66,6 +76,48 @@ impl ResearchReport {
                 "Simulated rotate advisories: {}, simulated circuit advisories: {}",
                 outcome.summary.simulated_rotate_advisories,
                 outcome.summary.simulated_circuit_advisories
+            );
+        }
+
+        out
+    }
+}
+
+impl LiveProfileReport {
+    pub fn render(&self) -> String {
+        let mut out = String::new();
+        let _ = writeln!(
+            &mut out,
+            "\n===== Sigma Morpho Live Profile Comparison ====="
+        );
+        let _ = writeln!(&mut out, "Target: {}", self.target);
+
+        for outcome in &self.outcomes {
+            let _ = writeln!(&mut out, "\nProfile: {}", outcome.profile.as_str());
+            let _ = writeln!(
+                &mut out,
+                "Requests: {}, Avg latency: {:.2} ms, Final delay: {} ms",
+                outcome.summary.total_requests,
+                if outcome.summary.latency_samples == 0 {
+                    0.0
+                } else {
+                    outcome.summary.latency_sum_ms as f64 / outcome.summary.latency_samples as f64
+                },
+                outcome.summary.final_delay_ms
+            );
+            let _ = writeln!(
+                &mut out,
+                "Findings: {}, Blocks: {}, Transport errors: {}, Client rebuilds: {}",
+                outcome.summary.logged_findings,
+                outcome.summary.blocked_responses,
+                outcome.summary.transport_errors,
+                outcome.summary.client_rebuilds
+            );
+            let _ = writeln!(
+                &mut out,
+                "Simulated actions: {}, Final profile: {}",
+                outcome.summary.simulated_action_events,
+                outcome.summary.final_profile.as_str()
             );
         }
 
@@ -228,8 +280,12 @@ mod tests {
             workers: 4,
             rounds: 1,
             recursion_depth: 0,
+            requested_timeout_ms: 1000,
             timeout_ms: 1000,
+            requested_initial_delay_ms: 50,
             initial_delay_ms: 50,
+            rebuild_client_every: None,
+            rebuild_client_on_advisory: false,
             min_delay_ms: 25,
             max_delay_ms: 500,
             latency_threshold_ms: 300,
@@ -243,6 +299,7 @@ mod tests {
             simulation_mode: true,
             scenario: Some(ScenarioKind::MixedDefense),
             compare_profiles: true,
+            compare_profiles_live: false,
         };
 
         let report = run_scenario(&config);

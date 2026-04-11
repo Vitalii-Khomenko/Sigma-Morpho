@@ -19,6 +19,8 @@ Sigma Morpho is a pure Rust, asynchronous HTTP workload tester for authorized cy
   Performs async HTTP requests and normalizes response metrics.
 - `src/network/profile.rs`
   Defines fixed client profiles and their static header/timeout presets.
+- `src/network/runtime.rs`
+  Provides safe active-client control, fixed-profile client rebuilding, and watch-based transport distribution to workers.
 - `src/core/engine.rs`
   Coordinates workers and the isolated neuro actor.
 - `src/core/metrics.rs`
@@ -94,6 +96,10 @@ Sigma Morpho now supports four safe research extensions derived from the ideas f
 3. local replay scenarios for defensive behavior
 4. comparative scenario reports across profiles
 
+It also includes a safe transport-control layer:
+
+5. fixed-profile client rebuild control without identity rotation
+
 ## Concurrency model
 
 - Workers generate HTTP requests concurrently.
@@ -101,6 +107,7 @@ Sigma Morpho now supports four safe research extensions derived from the ideas f
 - Workers send `ResponseMetric` events over `tokio::sync::mpsc`.
 - A dedicated neuro actor runs in `spawn_blocking` so CPU-bound inference does not stall async I/O.
 - The actor broadcasts global delay over `tokio::sync::watch`.
+- The active HTTP client is also distributed through `tokio::sync::watch`, allowing safe same-profile client rebuilds without stopping workers.
 
 This preserves throughput while avoiding lock contention on shared RSNN state.
 
