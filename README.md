@@ -64,9 +64,9 @@ There are always routes for further stealth:
 2. **Distributed Nodes**: Controlling multiple Tor instances (or bot proxies) simultaneously instead of just rebuilding one Circuit.
 3. **STDP Memory Persistence**: Currently, synaptic weights are localized to the program timeline. Saving the Synaptic state to physical storage for repeated runs on similar CDNs.
 
-## Interactive Run Wrapper
+## Automatic Run Wrapper
 
-If you want every run to archive itself automatically under `runs/`, use the interactive shell wrapper:
+If you want every run to archive itself automatically under `runs/` without interactive prompts, use the shell wrapper:
 
 ```bash
 chmod +x scripts/run_sigma_session.sh
@@ -74,15 +74,29 @@ chmod +x scripts/run_sigma_session.sh
 ```
 
 What the wrapper does automatically:
-- Prompts for the most common launch parameters with short inline explanations.
-- Creates a run directory in `runs/` using the current date, time, run label, and target host or IP.
+- Starts immediately with default settings and optional environment overrides.
+- Creates a fresh run directory in `runs/` using the current date, time, and target port.
 - Saves `command.txt`, `rerun.sh`, `metadata.txt`, build logs, runtime stdout/stderr, timing, and `findings.txt`.
-- Adds `--authorized-target` only after explicit confirmation for non-local hosts.
+
+Default behavior:
+- Base URL: `http://127.0.0.1:8080`
+- Wordlist: `wordlist.txt`
+- Build profile: `release`
+- Logs: always under `runs/YYYY-MM-DD_HH-MM-SS_PORT/`
 
 Typical local smoke-test flow:
 
 ```bash
 /usr/bin/python test_server.py
+./scripts/run_sigma_session.sh
+```
+
+If you need different parameters without editing the script, set environment variables before запуском, for example:
+
+```bash
+SIGMA_BASE_URL=http://127.0.0.1:8080 \
+SIGMA_WORDLIST=dict/api-endpoints.txt \
+SIGMA_WORKERS=8 \
 ./scripts/run_sigma_session.sh
 ```
 

@@ -7,23 +7,45 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd -P)
 
 print_help() {
     cat <<'EOF'
-Interactive Sigma Morpho runner.
+Automatic Sigma Morpho runner.
 
 What it does:
-- asks for the most common run parameters with short explanations
-- creates a timestamped run directory inside runs/
-- names the directory using date, time, label, and target host or IP
-- saves build logs, command, metadata, stdout, stderr, timing, and findings automatically
-- writes a rerun.sh file with the exact resolved command
+- starts without interactive prompts
+- always creates a fresh run directory inside runs/
+- names the directory using date, time, and target port
+- always saves command.txt, rerun.sh, metadata.txt, build logs, stdout, stderr, timing, and findings.txt
 
 Usage:
   scripts/run_sigma_session.sh
   scripts/run_sigma_session.sh --help
 
-Notes:
-- local targets do not require --authorized-target
-- remote targets require explicit confirmation and the wrapper adds --authorized-target
-- the wrapper builds the Rust binary before every run so logs stay reproducible
+Optional environment overrides:
+  SIGMA_BASE_URL=http://127.0.0.1:8080
+  SIGMA_WORDLIST=wordlist.txt
+  SIGMA_WORKERS=16
+  SIGMA_ROUNDS=1
+  SIGMA_RECURSION_DEPTH=0
+  SIGMA_TIMEOUT_MS=5000
+  SIGMA_INITIAL_DELAY_MS=50
+  SIGMA_MIN_DELAY_MS=25
+  SIGMA_MAX_DELAY_MS=5000
+  SIGMA_LATENCY_THRESHOLD_MS=800
+  SIGMA_INTERESTING_STATUSES=200,204,301,302,307,308,401,403,405,500
+  SIGMA_MIN_BODY_BYTES=0
+  SIGMA_MAX_BODY_BYTES=
+  SIGMA_SPEED_MODE=balanced
+  SIGMA_CLIENT_PROFILE=research-default
+  SIGMA_BUILD_PROFILE=release
+  SIGMA_SIMULATION_MODE=no
+  SIGMA_COMPARE_PROFILES_LIVE=no
+  SIGMA_REBUILD_CLIENT_ON_ADVISORY=no
+  SIGMA_DISABLE_SOFT_404_FILTER=no
+  SIGMA_SNN_STATE_FILE=
+  SIGMA_PROXIES_FILE=
+  SIGMA_TOR_PROXY=
+  SIGMA_TOR_CONTROL=
+  SIGMA_TOR_PASSWORD=
+  SIGMA_AUTHORIZED_TARGET=no
 EOF
 }
 
@@ -33,67 +55,6 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 
 cd "$REPO_ROOT"
-
-prompt_with_default() {
-    local __resultvar=$1
-    local label=$2
-    local hint=$3
-    local default_value=$4
-    local raw_value
-
-    printf '\n%s\n' "$label"
-    printf 'Hint: %s\n' "$hint"
-    printf 'Value [%s]: ' "$default_value"
-    read -r raw_value
-
-    if [[ -z "$raw_value" ]]; then
-        raw_value=$default_value
-    fi
-
-    printf -v "$__resultvar" '%s' "$raw_value"
-}
-
-prompt_optional() {
-    local __resultvar=$1
-    local label=$2
-    local hint=$3
-    local raw_value
-
-    printf '\n%s\n' "$label"
-    printf 'Hint: %s\n' "$hint"
-    printf 'Value [leave empty to skip]: '
-    read -r raw_value
-    printf -v "$__resultvar" '%s' "$raw_value"
-}
-
-prompt_yes_no() {
-    local __resultvar=$1
-    local label=$2
-    local hint=$3
-    local default_value=$4
-    local raw_value normalized
-
-    printf '\n%s\n' "$label"
-    printf 'Hint: %s\n' "$hint"
-    printf 'Value [%s]: ' "$default_value"
-    read -r raw_value
-
-    normalized=${raw_value:-$default_value}
-    normalized=${normalized,,}
-
-    case "$normalized" in
-        y|yes|1|true)
-            printf -v "$__resultvar" '%s' "yes"
-            ;;
-        n|no|0|false)
-            printf -v "$__resultvar" '%s' "no"
-            ;;
-        *)
-            echo "Expected yes or no, got: $normalized" >&2
-            exit 1
-            ;;
-    esac
-}
 
 canonical_path() {
     local input_path=$1
@@ -115,25 +76,81 @@ canonical_path() {
     )
 }
 
-extract_host() {
+extract_scheme() {
     local url=$1
-    local remainder host_port host_only
+    printf '%s\n' "${url%%://*}"
+}
+
+extract_host_port() {
+    local url=$1
+    local remainder host_port
 
     remainder=${url#*://}
     host_port=${remainder%%/*}
+    printf '%s\n' "$host_port"
+}
+
+extract_host() {
+    local url=$1
+    local host_port host_only
+
+    host_port=$(extract_host_port "$url")
     host_only=${host_port%%:*}
     host_only=${host_only#[}
     host_only=${host_only%]}
     printf '%s\n' "$host_only"
 }
 
+extract_port() {
+    local url=$1
+    local scheme host_port port
+
+    scheme=$(extract_scheme "$url")
+    host_port=$(extract_host_port "$url")
+
+    if [[ "$host_port" == \[*\]:* ]]; then
+        port=${host_port##*]:}
+        printf '%s\n' "$port"
+        return
+    fi
+
+    if [[ "$host_port" == \[*\] ]]; then
+        case "$scheme" in
+            https) printf '443\n' ;;
+            http) printf '80\n' ;;
+            *) printf 'unknown-port\n' ;;
+        esac
+        return
+    fi
+
+    if [[ "$host_port" == *:* ]]; then
+        port=${host_port##*:}
+        printf '%s\n' "$port"
+        return
+    fi
+
+    case "$scheme" in
+        https) printf '443\n' ;;
+        http) printf '80\n' ;;
+        *) printf 'unknown-port\n' ;;
+    esac
+}
+
 sanitize_segment() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '_'
 }
 
-is_local_host() {
-    local host=$1
-    [[ "$host" == "localhost" || "$host" == "127.0.0.1" || "$host" == "::1" || "$host" == *.localhost ]]
+as_yes_no() {
+    local value=${1,,}
+
+    case "$value" in
+        y|yes|1|true|on) printf 'yes\n' ;;
+        n|no|0|false|off|'') printf 'no\n' ;;
+        *)
+            echo "Expected yes/no style value, got: $1" >&2
+            exit 1
+            ;;
+    esac
 }
 
 append_flag_if_yes() {
@@ -168,39 +185,50 @@ render_command() {
     printf '%s\n' "$rendered"
 }
 
+next_run_dir() {
+    local base_rel=$1
+    local candidate_rel=$base_rel
+    local counter=1
+
+    while [[ -e "$REPO_ROOT/$candidate_rel" ]]; do
+        candidate_rel="${base_rel}_$counter"
+        counter=$((counter + 1))
+    done
+
+    printf '%s\n' "$candidate_rel"
+}
+
 if ! command -v cargo >/dev/null 2>&1; then
     echo "cargo is required but was not found in PATH" >&2
     exit 1
 fi
 
-echo "Sigma Morpho interactive runner"
-echo "Press Enter to accept the default value shown in brackets."
-echo "All run artifacts will be saved automatically under runs/."
-
-prompt_with_default run_label "Run label" "Short suffix for the run directory name." "interactive"
-prompt_with_default build_profile "Build profile" "Use release for normal runs or debug for faster rebuilds." "release"
-prompt_with_default base_url "Base URL" "Full target URL including scheme, for example http://127.0.0.1:8080." "http://127.0.0.1:8080"
-prompt_with_default wordlist_path "Wordlist path" "File or directory relative to repo root or absolute path." "wordlist.txt"
-prompt_with_default workers "Workers" "Parallel request workers. Higher values increase pressure." "16"
-prompt_with_default rounds "Rounds" "How many times the seed wordlist should be replayed." "1"
-prompt_with_default recursion_depth "Recursion depth" "0 disables recursion. Use 1 or more to recurse into found directories." "0"
-prompt_with_default timeout_ms "Timeout ms" "Per-request timeout in milliseconds." "5000"
-prompt_with_default initial_delay_ms "Initial delay ms" "Starting adaptive delay before the RSNN reacts." "50"
-prompt_with_default min_delay_ms "Min delay ms" "Lower bound for adaptive pacing." "25"
-prompt_with_default max_delay_ms "Max delay ms" "Upper bound for adaptive pacing." "5000"
-prompt_with_default latency_threshold_ms "Latency threshold ms" "Latency above this value counts as pressure." "800"
-prompt_with_default interesting_statuses "Interesting statuses" "Comma-separated HTTP status codes to write into findings.txt." "200,204,301,302,307,308,401,403,405,500"
-prompt_with_default min_body_bytes "Min body bytes" "Ignore hits smaller than this size." "0"
-prompt_optional max_body_bytes "Max body bytes" "Optional upper body-size limit for findings."
-prompt_with_default speed_mode "Speed mode" "One of: safe, balanced, fast, aggressive." "balanced"
-prompt_with_default client_profile "Client profile" "One of: research-default, browser-desktop, mobile-safari, api-diagnostic." "research-default"
-prompt_yes_no simulation_mode "Simulation mode" "Use simulator only and avoid real network activity." "no"
-prompt_yes_no compare_profiles_live "Compare profiles live" "Run the same workload with every fixed client profile." "no"
-prompt_yes_no rebuild_client_on_advisory "Rebuild client on advisory" "Hot-swap the reqwest client when the neuro layer asks for it." "no"
-prompt_yes_no disable_soft_404_filter "Disable soft-404 filter" "Turn off baseline probing for soft-404 suppression." "no"
-prompt_optional snn_state_file "SNN state file" "Optional path to persistent SNN state JSON."
-prompt_optional proxies_file "Proxies file" "Optional file with one proxy URL per line."
-prompt_yes_no use_tor "Use Tor settings" "If yes, the wrapper will ask for Tor proxy and control settings." "no"
+base_url=${SIGMA_BASE_URL:-http://127.0.0.1:8080}
+wordlist_path=${SIGMA_WORDLIST:-wordlist.txt}
+workers=${SIGMA_WORKERS:-16}
+rounds=${SIGMA_ROUNDS:-1}
+recursion_depth=${SIGMA_RECURSION_DEPTH:-0}
+timeout_ms=${SIGMA_TIMEOUT_MS:-5000}
+initial_delay_ms=${SIGMA_INITIAL_DELAY_MS:-50}
+min_delay_ms=${SIGMA_MIN_DELAY_MS:-25}
+max_delay_ms=${SIGMA_MAX_DELAY_MS:-5000}
+latency_threshold_ms=${SIGMA_LATENCY_THRESHOLD_MS:-800}
+interesting_statuses=${SIGMA_INTERESTING_STATUSES:-200,204,301,302,307,308,401,403,405,500}
+min_body_bytes=${SIGMA_MIN_BODY_BYTES:-0}
+max_body_bytes=${SIGMA_MAX_BODY_BYTES:-}
+speed_mode=${SIGMA_SPEED_MODE:-balanced}
+client_profile=${SIGMA_CLIENT_PROFILE:-research-default}
+build_profile=${SIGMA_BUILD_PROFILE:-release}
+simulation_mode=$(as_yes_no "${SIGMA_SIMULATION_MODE:-no}")
+compare_profiles_live=$(as_yes_no "${SIGMA_COMPARE_PROFILES_LIVE:-no}")
+rebuild_client_on_advisory=$(as_yes_no "${SIGMA_REBUILD_CLIENT_ON_ADVISORY:-no}")
+disable_soft_404_filter=$(as_yes_no "${SIGMA_DISABLE_SOFT_404_FILTER:-no}")
+authorized_target=$(as_yes_no "${SIGMA_AUTHORIZED_TARGET:-no}")
+snn_state_file=${SIGMA_SNN_STATE_FILE:-}
+proxies_file=${SIGMA_PROXIES_FILE:-}
+tor_proxy=${SIGMA_TOR_PROXY:-}
+tor_control=${SIGMA_TOR_CONTROL:-}
+tor_password=${SIGMA_TOR_PASSWORD:-}
 
 case "$build_profile" in
     release|debug)
@@ -211,20 +239,16 @@ case "$build_profile" in
         ;;
 esac
 
-tor_proxy=""
-tor_control=""
-tor_password=""
-
-if [[ "$use_tor" == "yes" ]]; then
-    prompt_with_default tor_proxy "Tor proxy URL" "Usually socks5h://127.0.0.1:9050." "socks5h://127.0.0.1:9050"
-    prompt_with_default tor_control "Tor control address" "Usually 127.0.0.1:9051." "127.0.0.1:9051"
-    prompt_optional tor_password "Tor control password" "Optional unless your torrc requires authentication."
-fi
-
 host=$(extract_host "$base_url")
+port=$(extract_port "$base_url")
 
 if [[ -z "$host" ]]; then
     echo "Could not extract host from base URL: $base_url" >&2
+    exit 1
+fi
+
+if [[ -z "$port" ]]; then
+    echo "Could not extract port from base URL: $base_url" >&2
     exit 1
 fi
 
@@ -251,26 +275,15 @@ if [[ -n "$proxies_file" ]]; then
     fi
 fi
 
-remote_authorized="no"
-if ! is_local_host "$host"; then
-    prompt_yes_no remote_authorized "Remote target confirmation" "The target is not local. Confirm you are authorized to test it." "no"
-    if [[ "$remote_authorized" != "yes" ]]; then
-        echo "Aborted because remote target authorization was not confirmed." >&2
-        exit 1
-    fi
-fi
-
-build_profile_slug=$(sanitize_segment "$build_profile")
-label_slug=$(sanitize_segment "$run_label")
-host_slug=$(sanitize_segment "$host")
 timestamp=$(date +%F_%H-%M-%S)
-run_dir_rel="runs/${timestamp}_${label_slug}_${host_slug}"
+port_slug=$(sanitize_segment "$port")
+run_dir_rel=$(next_run_dir "runs/${timestamp}_${port_slug}")
 run_dir_abs="$REPO_ROOT/$run_dir_rel"
 mkdir -p "$run_dir_abs"
 
 findings_file="$run_dir_abs/findings.txt"
 
-if [[ "$build_profile_slug" == "release" ]]; then
+if [[ "$build_profile" == "release" ]]; then
     build_args=(build --release)
     binary_path="$REPO_ROOT/target/release/sigma_morpho"
 else
@@ -307,10 +320,7 @@ append_optional_arg --proxies-file "$proxies_file"
 append_optional_arg --tor-proxy "$tor_proxy"
 append_optional_arg --tor-control "$tor_control"
 append_optional_arg --tor-password "$tor_password"
-
-if [[ "$remote_authorized" == "yes" ]]; then
-    CMD+=(--authorized-target)
-fi
+append_flag_if_yes "$authorized_target" --authorized-target
 
 resolved_command=$(render_command "${CMD[@]}")
 
@@ -328,10 +338,10 @@ chmod +x "$run_dir_abs/rerun.sh"
 {
     printf 'started_at=%s\n' "$(date --iso-8601=seconds)"
     printf 'run_dir=%s\n' "$run_dir_rel"
-    printf 'label=%s\n' "$run_label"
     printf 'target=%s\n' "$base_url"
     printf 'host=%s\n' "$host"
-    printf 'build_profile=%s\n' "$build_profile_slug"
+    printf 'port=%s\n' "$port"
+    printf 'build_profile=%s\n' "$build_profile"
     printf 'wordlist=%s\n' "$wordlist_abs"
     printf 'workers=%s\n' "$workers"
     printf 'rounds=%s\n' "$rounds"
@@ -355,15 +365,16 @@ chmod +x "$run_dir_abs/rerun.sh"
     printf 'tor_proxy=%s\n' "${tor_proxy:-none}"
     printf 'tor_control=%s\n' "${tor_control:-none}"
     printf 'findings_file=%s\n' "$findings_file"
-    printf 'authorized_target=%s\n' "$remote_authorized"
+    printf 'authorized_target=%s\n' "$authorized_target"
 } > "$run_dir_abs/metadata.txt"
 
 if [[ -f "$wordlist_abs" ]] && command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$wordlist_abs" > "$run_dir_abs/wordlist.sha256"
 fi
 
-echo
 echo "Run directory: $run_dir_rel"
+echo "Target: $base_url"
+echo "Port: $port"
 echo "Building Sigma Morpho first. Build logs will be stored in the run directory."
 
 set +e
@@ -393,7 +404,6 @@ set -e
 printf 'ended_at=%s\n' "$(date --iso-8601=seconds)" >> "$run_dir_abs/metadata.txt"
 printf 'run_exit_code=%s\n' "$run_exit_code" >> "$run_dir_abs/metadata.txt"
 
-echo
 echo "Run finished with exit code: $run_exit_code"
 echo "Artifacts:"
 echo "  $run_dir_rel/command.txt"
