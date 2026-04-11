@@ -10,7 +10,7 @@ use url::Url;
 
 #[derive(Clone)]
 pub struct NetworkClient {
-    client: Client,
+    clients: Vec<Client>,
     base_url: Url,
 }
 
@@ -22,30 +22,57 @@ impl NetworkClient {
         speed_mode: SpeedMode,
         workers: usize,
         tor_proxy: Option<String>,
+        proxies: &[String],
     ) -> Result<Self> {
+        let mut proxy_list = proxies.to_vec();
+        if proxy_list.is_empty() {
+            if let Some(tp) = tor_proxy {
+                proxy_list.push(tp);
+            }
+        }
+
+        let mut clients = Vec::new();
+        if proxy_list.is_empty() {
+            clients.push(Self::build_client(timeout_ms, profile, speed_mode, workers, None)?);
+        } else {
+            let per_proxy_workers = (workers / proxy_list.len()).max(1);
+            for p in &proxy_list {
+                clients.push(Self::build_client(timeout_ms, profile, speed_mode, per_proxy_workers, Some(p.clone()))?);
+            }
+        }
+
+        Ok(Self { clients, base_url })
+    }
+
+    fn build_client(
+        timeout_ms: u64,
+        profile: ClientProfile,
+        _speed_mode: SpeedMode,
+        workers: usize,
+        proxy_url: Option<String>,
+    ) -> Result<Client> {
         let mut builder = Client::builder()
             .timeout(Duration::from_millis(timeout_ms))
             .user_agent(profile.user_agent())
             .default_headers(profile.default_headers())
-            .pool_max_idle_per_host(speed_mode.pool_max_idle_per_host(workers))
+            .pool_max_idle_per_host(workers.max(1))
+            .pool_idle_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
             .use_rustls_tls()
-            .min_tls_version(reqwest::tls::Version::TLS_1_2) // Simulate real fingerprint
+            .min_tls_version(reqwest::tls::Version::TLS_1_2) 
             .brotli(true)
             .deflate(true)
             .gzip(true);
 
-        if let Some(proxy_url) = tor_proxy {
-            let proxy = Proxy::all(&proxy_url)
-                .with_context(|| format!("Invalid proxy URL: {}", proxy_url))?;
+        if let Some(url) = proxy_url {
+            let proxy = Proxy::all(&url)
+                .with_context(|| format!("Invalid proxy URL: {}", url))?;
             builder = builder.proxy(proxy);
         }
 
-        let client = builder.build().context("Failed to build HTTP client")?;
-
-
-        Ok(Self { client, base_url })
+        builder.build().context("Failed to build HTTP client")
     }
+
 
     pub async fn execute_path(&self, path: &str) -> ResponseMetric {
         let normalized_path = path.trim_start_matches('/');
@@ -70,7 +97,14 @@ impl NetworkClient {
         };
 
         let start = Instant::now();
-        let response = self.client.get(url).send().await;
+        
+        let client = {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            self.clients.choose(&mut rng).unwrap_or(&self.clients[0]).clone()
+        };
+        
+        let response = client.get(url).send().await;
         let latency_ms = start.elapsed().as_millis() as u64;
 
         match response {

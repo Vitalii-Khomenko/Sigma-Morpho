@@ -9,17 +9,17 @@ This version is optimized for **RED Teaming** operations and advanced **CTFs** (
 - **Neuromorphic Engine (SNN)**:
   - Sequences of 429s, 403s, and 503s translate into "stress spikes" in the Spiking Neural Network.
   - LIF (Leaky Integrate-and-Fire) neurons simulate biological adaptation, meaning delays rise exponentially under stress and fall gradually when conditions improve (mimicking human surfing behavior).
+- **High-Performance Job Queue (Lazy Recursion)**:
+  - Optimized for millions of paths using **Lazy Recursion**. New paths aren't generated all at once; they are yielded on-the-fly (`O(1)`), preventing memory spikes and Mutex bottlenecks.
+  - Leverages **DashMap** (Lock-Free Concurrent HashSet) to track visited directories with zero-latency overhead.
+- **Proxy & Tor Multiplexing**:
+  - Automatically manages a pool of internal HTTP clients, distributing them across multiple Tor circuits or external proxies.
+  - Parallelizes traffic through separate IP tunnels simultaneously, radically increasing throughput while maintaining stealth.
 - **Asynchronous Evasion Controller**:
   - Implements an **Actors architecture** separating heavy CPU-bound SNN calculations (`tokio::spawn_blocking`) from the thousands of async HTTP workers (`Reqwest + Tokio`).
-  - Hot-swaps the HTTP connection pool (`reqwest::Client`) on the fly when User-Agents are rotated, effectively purging old tracking mechanisms without blocking worker threads.
-- **Dynamic Identity Rotation**:
-  - Automatically shifts User-Agent and Headers based on SNN evasion requirements (triggered by sustained 403 patterns).
-- **Tor Circuit Integration**:
-  - Direct integration over raw TCP with the **Tor Control Port**.
-  - Sends the `SIGNAL NEWNYM` command to change the egress IP dynamically upon critical blockage detection, bypassing IP-based filtering.
-- **Deep Recursion & Filtering**:
-  - Automatically recurses into discovered directories with depth control (`--recursion-depth`).
-  - Built-in soft 404 detection using randomized baseline probes.
+  - Hot-swaps the HTTP connection pool (`reqwest::Client`) on the fly, effectively purging old tracking mechanisms without blocking worker threads.
+- **Deep Recursion & Soft 404 Detection**:
+  - Aggressive directory expansion with depth control and baseline suppression filtered by automated probes.
 
 ## ⚙️ How to use for Testing (CTF & RED Teaming)
 

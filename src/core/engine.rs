@@ -11,7 +11,8 @@ use crate::network::tor::TorController;
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
 use rand::random;
-use std::collections::{HashSet, VecDeque};
+use dashmap::DashSet;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -166,9 +167,20 @@ struct WorkItem {
     depth: u8,
 }
 
+struct DirExpansion {
+    base_path: String,
+    depth: u8,
+    seed_index: usize,
+}
+
+struct JobQueueState {
+    jobs: VecDeque<WorkItem>,
+    active_expansions: VecDeque<DirExpansion>,
+}
+
 struct JobQueue {
-    queue: Mutex<VecDeque<WorkItem>>,
-    visited: Mutex<HashSet<String>>,
+    queue: Mutex<JobQueueState>,
+    visited_dirs: DashSet<String>,
     pending: AtomicUsize,
     scheduled_total: Arc<AtomicUsize>,
     notify: Notify,
@@ -183,14 +195,12 @@ impl JobQueue {
         recursion_depth: u8,
     ) -> Arc<Self> {
         let initial_jobs_len = initial_jobs.len();
-        let mut visited = HashSet::with_capacity(initial_jobs.len());
-        for job in &initial_jobs {
-            visited.insert(job.path.clone());
-        }
-
         Arc::new(Self {
-            queue: Mutex::new(initial_jobs.into_iter().collect()),
-            visited: Mutex::new(visited),
+            queue: Mutex::new(JobQueueState {
+                jobs: initial_jobs.into_iter().collect(),
+                active_expansions: VecDeque::new(),
+            }),
+            visited_dirs: DashSet::new(),
             pending: AtomicUsize::new(initial_jobs_len),
             scheduled_total: Arc::new(AtomicUsize::new(initial_jobs_len)),
             notify: Notify::new(),
@@ -201,9 +211,29 @@ impl JobQueue {
 
     async fn pop(&self) -> Option<WorkItem> {
         loop {
-            if let Some(job) = self.queue.lock().await.pop_front() {
+            let mut state = self.queue.lock().await;
+
+            // Try explicit jobs first
+            if let Some(job) = state.jobs.pop_front() {
                 return Some(job);
             }
+
+            // Try expansions
+            if let Some(mut exp) = state.active_expansions.pop_front() {
+                if exp.seed_index < self.seed_paths.len() {
+                    let seed = &self.seed_paths[exp.seed_index];
+                    let child_path = join_paths(&exp.base_path, seed);
+                    exp.seed_index += 1;
+
+                    let depth = exp.depth;
+                    if exp.seed_index < self.seed_paths.len() {
+                        state.active_expansions.push_back(exp);
+                    }
+                    return Some(WorkItem { path: child_path, depth });
+                }
+            }
+
+            drop(state);
 
             if self.pending.load(Ordering::Relaxed) == 0 {
                 return None;
@@ -229,37 +259,29 @@ impl JobQueue {
             return 0;
         }
 
-        let mut discovered = Vec::new();
-        let mut visited = self.visited.lock().await;
-
-        for seed in self.seed_paths.iter() {
-            let child_path = join_paths(&job.path, seed);
-            if visited.insert(child_path.clone()) {
-                discovered.push(WorkItem {
-                    path: child_path,
-                    depth: job.depth + 1,
-                });
-            }
-        }
-        drop(visited);
-
-        let discovered_len = discovered.len();
-        if discovered_len == 0 {
+        if !self.visited_dirs.insert(job.path.clone()) {
             return 0;
         }
 
-        {
-            let mut queue = self.queue.lock().await;
-            for child in discovered {
-                queue.push_back(child);
-            }
+        let seed_count = self.seed_paths.len();
+        if seed_count == 0 {
+            return 0;
         }
 
-        self.pending.fetch_add(discovered_len, Ordering::Relaxed);
+        let mut queue = self.queue.lock().await;
+        queue.active_expansions.push_back(DirExpansion {
+            base_path: job.path.clone(),
+            depth: job.depth + 1,
+            seed_index: 0,
+        });
+        drop(queue);
+
+        self.pending.fetch_add(seed_count, Ordering::Relaxed);
         self.scheduled_total
-            .fetch_add(discovered_len, Ordering::Relaxed);
+            .fetch_add(seed_count, Ordering::Relaxed);
         self.notify.notify_waiters();
-        discovered_len
+
+        seed_count
     }
 }
 

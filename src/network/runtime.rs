@@ -64,22 +64,14 @@ impl SafeClientFactory {
             println!("[ROTATOR] Rotated User-Agent to profile: {}", self.current_profile.as_str());
         }
 
-        let mut current_proxy = self.config.tor_proxy.clone();
-        if !self.config.proxies.is_empty() {
-            let mut rng = rand::thread_rng();
-            current_proxy = Some(self.config.proxies.choose(&mut rng).unwrap().clone());
-            if rotate {
-                println!("[ROTATOR] Switched proxy to: {}", current_proxy.as_ref().unwrap());
-            }
-        }
-
         Ok(Arc::new(NetworkClient::new(
             self.config.base_url.clone(),
             self.config.timeout_ms,
             self.current_profile,
             self.config.speed_mode,
             self.config.workers,
-            current_proxy,
+            self.config.tor_proxy.clone(),
+            &self.config.proxies,
         )?))
     }
 
