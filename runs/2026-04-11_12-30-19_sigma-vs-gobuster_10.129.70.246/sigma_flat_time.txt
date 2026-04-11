@@ -1,3 +1,0 @@
-elapsed_seconds=0.605849
-requests=6
-rps=9.903453

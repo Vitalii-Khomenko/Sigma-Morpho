@@ -1,6 +1,0 @@
-images
-fonts
-js
-themes
-cdn-cgi
-server-status

@@ -1,0 +1,70 @@
+[*] Sigma Morpho started
+[*] Target: http://127.0.0.1:8080/
+[*] Client profile: research-default
+[*] Workload: 20 seed paths x 1 rounds, workers: 8, recursion depth: 0
+[*] Soft-404 baseline: status=404 bytes=9 fingerprint=4416902682472380750
+[FINDING] status=403 bytes=9 latency=1ms path=/admin-panel
+[NEURO] profile=cautious status=403 latency=1ms -> delay=140ms
+[FINDING] status=403 bytes=9 latency=4ms path=/hidden
+[NEURO] profile=cautious status=403 latency=4ms -> delay=250ms
+[FINDING] status=200 bytes=16 latency=3ms path=/api
+[FINDING] status=429 bytes=20 latency=3ms path=/public-assets
+[FINDING] status=429 bytes=20 latency=3ms path=/public
+[FINDING] status=200 bytes=16 latency=3ms path=/api-v2
+[FINDING] status=429 bytes=20 latency=2ms path=/missing-two
+[FINDING] status=429 bytes=20 latency=2ms path=/api-docs
+[FINDING] status=429 bytes=20 latency=2ms path=/hidden-admin
+[FINDING] status=429 bytes=20 latency=2ms path=/hidden-dir
+[FINDING] status=429 bytes=20 latency=2ms path=/admin-console
+[FINDING] status=429 bytes=20 latency=2ms path=/missing-three
+[FINDING] status=429 bytes=20 latency=2ms path=/public-api
+[FINDING] status=429 bytes=20 latency=1ms path=/public-status
+[FINDING] status=429 bytes=20 latency=1ms path=/missing-four
+[FINDING] status=429 bytes=20 latency=1ms path=/api-health
+[FINDING] status=429 bytes=20 latency=1ms path=/admin-root
+[FINDING] status=429 bytes=20 latency=2ms path=/hidden-secret
+[FINDING] status=403 bytes=9 latency=1011ms path=/admin
+[PROGRESS] processed=20/20 (100.00%) delay=250ms profile=defensive
+
+===== Sigma Morpho Summary =====
+Elapsed: 1.02s
+Client profile: research-default
+Speed mode: balanced
+Simulation mode: false
+Findings file: /home/warmond/AI-Research/Sigma-Morpho/runs/2026-04-11_14-26-25_wrapper-smoke_127.0.0.1/findings.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 20
+Discovered jobs: 20
+2xx: 2
+3xx: 0
+4xx: 18
+404s: 1
+Protective block signals (403/429/503): 17
+5xx: 0
+Transport errors: 0
+Avg latency: 52.55 ms
+Min latency: 1 ms
+Max latency: 1011 ms
+Total body bytes: 348
+Final adaptive delay: 250 ms
+Final adaptive profile: defensive
+Neuro decisions: 20
+Throttle increases: 2
+Throttle decreases: 0
+Cautious entries: 1
+Defensive entries: 1
+Baseline recoveries: 0
+Latency burst events: 1
+Block burst events: 16
+404 burst events: 0
+Logged findings: 19
+Suppressed soft-404 matches: 0
+Client rebuilds: 0
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+200 hits:
+  - /api
+  - /api-v2
+

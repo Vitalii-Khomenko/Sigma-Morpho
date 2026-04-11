@@ -1,6 +1,0 @@
-/images               (Status: 301) [Size: 315] [--> http://10.129.70.246/images/]
-/fonts                (Status: 301) [Size: 314] [--> http://10.129.70.246/fonts/]
-/js                   (Status: 301) [Size: 311] [--> http://10.129.70.246/js/]
-/server-status        (Status: 403) [Size: 278]
-/themes               (Status: 301) [Size: 315] [--> http://10.129.70.246/themes/]
-/cdn-cgi              (Status: 301) [Size: 316] [--> http://10.129.70.246/cdn-cgi/]
