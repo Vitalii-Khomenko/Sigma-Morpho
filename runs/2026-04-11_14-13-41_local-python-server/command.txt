@@ -1,0 +1,1 @@
+target/release/sigma_morpho --base-url http://127.0.0.1:8080 --wordlist runs/2026-04-11_14-13-41_local-python-server/wordlist.txt --workers 12 --rounds 1 --initial-delay-ms 0 --min-delay-ms 0 --max-delay-ms 250 --latency-threshold-ms 150 --client-profile research-default --findings-file runs/2026-04-11_14-13-41_local-python-server/findings.txt --interesting-statuses 200,403,429

@@ -300,6 +300,12 @@ mod tests {
             scenario: Some(ScenarioKind::MixedDefense),
             compare_profiles: true,
             compare_profiles_live: false,
+            tor_proxy: None,
+            tor_control: None,
+            tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         let report = run_scenario(&config);
