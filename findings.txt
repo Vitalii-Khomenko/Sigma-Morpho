@@ -1,0 +1,8 @@
+# Sigma Morpho findings
+# statuses=200,204,301,302,307,308,401,403,405,500
+# min_body_bytes=0
+# max_body_bytes=none
+# soft_404_filter=true
+# soft_404_baseline status=404 bytes=9 fingerprint=4416902682472380750
+status=200 bytes=16 latency_ms=1 fingerprint=6992734524433708686 path=/api
+status=200 bytes=16 latency_ms=1 fingerprint=6992734524433708686 path=/public
