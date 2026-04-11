@@ -51,6 +51,16 @@ cargo run -- \
   --client-profile browser-desktop
 ```
 
+Live mode with a dictionary directory:
+
+```bash
+cargo run -- \
+  --base-url http://127.0.0.1:8000 \
+  --wordlist dict \
+  --workers 8 \
+  --client-profile research-default
+```
+
 Authorized remote lab:
 
 ```bash
@@ -77,6 +87,8 @@ cargo run -- \
 
 - `--client-profile <profile>`
   Chooses a fixed header and timeout profile for the whole run.
+- `--wordlist <path>`
+  Accepts either a single file or a directory such as `dict/`. When a directory is used, Sigma Morpho loads supported text wordlists, normalizes entries, and removes duplicates.
 - `--simulation-mode`
   Enables simulation-only advisory events for actions inspired by the research ideas file.
 - `--scenario <scenario>`
@@ -96,6 +108,19 @@ cargo run -- \
 - [`docs/AUTHORIZATION_TEMPLATE.md`](./docs/AUTHORIZATION_TEMPLATE.md)
 - [`docs/LEGAL_NOTICE.md`](./docs/LEGAL_NOTICE.md)
 - [`docs/UNSUPPORTED_FROM_IDEAS.md`](./docs/UNSUPPORTED_FROM_IDEAS.md)
+
+## Wordlist strategy
+
+- `wordlist.txt`
+  Small starter set for fast smoke tests.
+- `dict/api-endpoints.txt`
+  Useful when the target looks API-heavy.
+- `dict/raft-large-directories.txt`
+  Good broad web coverage.
+- `dict/DirBuster-2007_directory-list-2.3-medium.txt`
+  Large legacy directory corpus for deeper exploration.
+- `dict/`
+  Best when you want Sigma Morpho to merge all available dictionaries into one deduplicated run set.
 
 ## Verification
 

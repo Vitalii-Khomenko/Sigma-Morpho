@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -129,28 +130,86 @@ impl AppConfig {
     }
 
     pub fn load_wordlist(&self) -> Result<Vec<String>> {
-        let file = File::open(&self.wordlist)
-            .with_context(|| format!("Failed to open wordlist: {}", self.wordlist.display()))?;
+        if self.wordlist.is_dir() {
+            return self.load_wordlist_dir();
+        }
+
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        self.load_wordlist_file(&self.wordlist, &mut seen, &mut paths)?;
+        Ok(paths)
+    }
+
+    fn load_wordlist_dir(&self) -> Result<Vec<String>> {
+        let mut entries = std::fs::read_dir(&self.wordlist)
+            .with_context(|| format!("Failed to read wordlist dir: {}", self.wordlist.display()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .with_context(|| format!("Failed to enumerate dir: {}", self.wordlist.display()))?;
+
+        entries.sort_by_key(|entry| entry.path());
+
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        let mut loaded_files = 0_u64;
+
+        for entry in entries {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let is_text_like = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| matches!(ext, "txt" | "lst" | "list"))
+                .unwrap_or(false);
+
+            if !is_text_like {
+                continue;
+            }
+
+            self.load_wordlist_file(&path, &mut seen, &mut paths)?;
+            loaded_files += 1;
+        }
+
+        if loaded_files == 0 {
+            bail!(
+                "No supported wordlist files found in directory: {}",
+                self.wordlist.display()
+            );
+        }
+
+        Ok(paths)
+    }
+
+    fn load_wordlist_file(
+        &self,
+        path: &PathBuf,
+        seen: &mut HashSet<String>,
+        output: &mut Vec<String>,
+    ) -> Result<()> {
+        let file = File::open(path)
+            .with_context(|| format!("Failed to open wordlist: {}", path.display()))?;
         let reader = BufReader::new(file);
 
-        let mut paths = Vec::new();
         for line in reader.lines() {
-            let raw = line.with_context(|| {
-                format!(
-                    "Failed reading line in wordlist: {}",
-                    self.wordlist.display()
-                )
-            })?;
+            let raw = line
+                .with_context(|| format!("Failed reading line in wordlist: {}", path.display()))?;
 
             let trimmed = raw.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
 
-            paths.push(trimmed.trim_start_matches('/').to_string());
+            let normalized = trimmed.trim_start_matches('/').to_string();
+            if normalized.is_empty() || !seen.insert(normalized.clone()) {
+                continue;
+            }
+
+            output.push(normalized);
         }
 
-        Ok(paths)
+        Ok(())
     }
 }
 
@@ -231,6 +290,43 @@ mod tests {
         assert_eq!(paths, vec!["admin".to_string(), "api".to_string()]);
 
         let _ = fs::remove_file(path);
+        Ok(())
+    }
+
+    #[test]
+    fn wordlist_directory_loader_merges_and_deduplicates() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "sigma-morpho-dict-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&dir)?;
+        fs::write(dir.join("a.txt"), "admin\napi\n# x\n")?;
+        fs::write(dir.join("b.txt"), "/api\nhealth\n")?;
+        fs::write(dir.join("notes.md"), "ignored\n")?;
+
+        let cfg = AppConfig {
+            base_url: Url::parse("http://127.0.0.1:8000")?,
+            wordlist: dir.clone(),
+            workers: 1,
+            rounds: 1,
+            timeout_ms: 1000,
+            initial_delay_ms: 25,
+            min_delay_ms: 25,
+            max_delay_ms: 100,
+            latency_threshold_ms: 500,
+            client_profile: ClientProfile::ResearchDefault,
+            simulation_mode: false,
+            scenario: None,
+            compare_profiles: false,
+        };
+
+        let paths = cfg.load_wordlist()?;
+        assert_eq!(
+            paths,
+            vec!["admin".to_string(), "api".to_string(), "health".to_string()]
+        );
+
+        let _ = fs::remove_dir_all(dir);
         Ok(())
     }
 
