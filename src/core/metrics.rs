@@ -1,5 +1,6 @@
 use crate::core::profile::AdaptiveProfile;
 use crate::core::simulation::SimulatedAction;
+use crate::core::speed::SpeedMode;
 use crate::neuro::rsnn::{NeuroAction, RsnnDecision};
 use std::fmt::Write;
 use std::time::Duration;
@@ -10,6 +11,7 @@ pub struct ResponseMetric {
     pub status: u16,
     pub latency_ms: u64,
     pub body_size: usize,
+    pub body_fingerprint: u64,
     pub transport_error: bool,
 }
 
@@ -31,6 +33,7 @@ pub struct RunSummary {
     pub hits_200: Vec<String>,
     pub final_delay_ms: u64,
     pub client_profile: String,
+    pub speed_mode: String,
     pub simulation_mode: bool,
     pub neuro_decisions: u64,
     pub throttle_increases: u64,
@@ -41,6 +44,10 @@ pub struct RunSummary {
     pub latency_burst_events: u64,
     pub block_burst_events: u64,
     pub not_found_burst_events: u64,
+    pub logged_findings: u64,
+    pub suppressed_soft_404: u64,
+    pub findings_file: String,
+    pub soft_404_filter_active: bool,
     pub simulated_rotate_advisories: u64,
     pub simulated_circuit_advisories: u64,
     pub simulation_notes: Vec<String>,
@@ -66,6 +73,7 @@ impl Default for RunSummary {
             hits_200: Vec::new(),
             final_delay_ms: 0,
             client_profile: "research-default".to_string(),
+            speed_mode: SpeedMode::Balanced.as_str().to_string(),
             simulation_mode: false,
             neuro_decisions: 0,
             throttle_increases: 0,
@@ -76,6 +84,10 @@ impl Default for RunSummary {
             latency_burst_events: 0,
             block_burst_events: 0,
             not_found_burst_events: 0,
+            logged_findings: 0,
+            suppressed_soft_404: 0,
+            findings_file: "findings.txt".to_string(),
+            soft_404_filter_active: false,
             simulated_rotate_advisories: 0,
             simulated_circuit_advisories: 0,
             simulation_notes: Vec::new(),
@@ -96,6 +108,8 @@ pub struct NeuroTelemetry {
     pub latency_burst_events: u64,
     pub block_burst_events: u64,
     pub not_found_burst_events: u64,
+    pub logged_findings: u64,
+    pub suppressed_soft_404: u64,
     pub final_delay_ms: u64,
     pub final_profile: AdaptiveProfile,
     pub simulated_rotate_advisories: u64,
@@ -117,6 +131,8 @@ impl Default for NeuroTelemetry {
             latency_burst_events: 0,
             block_burst_events: 0,
             not_found_burst_events: 0,
+            logged_findings: 0,
+            suppressed_soft_404: 0,
             final_delay_ms: 0,
             final_profile: AdaptiveProfile::Baseline,
             simulated_rotate_advisories: 0,
@@ -172,6 +188,14 @@ impl NeuroTelemetry {
         if self.simulation_notes.len() > 8 {
             self.simulation_notes.remove(0);
         }
+    }
+
+    pub fn record_finding(&mut self) {
+        self.logged_findings += 1;
+    }
+
+    pub fn record_soft_404_suppression(&mut self) {
+        self.suppressed_soft_404 += 1;
     }
 }
 
@@ -233,6 +257,8 @@ impl RunSummary {
         self.total_body_bytes += other.total_body_bytes;
         self.hits_200.extend(other.hits_200);
         self.simulation_notes.extend(other.simulation_notes);
+        self.logged_findings += other.logged_findings;
+        self.suppressed_soft_404 += other.suppressed_soft_404;
 
         if other.final_delay_ms > 0 {
             self.final_delay_ms = other.final_delay_ms;
@@ -249,6 +275,8 @@ impl RunSummary {
         self.latency_burst_events += neuro.latency_burst_events;
         self.block_burst_events += neuro.block_burst_events;
         self.not_found_burst_events += neuro.not_found_burst_events;
+        self.logged_findings += neuro.logged_findings;
+        self.suppressed_soft_404 += neuro.suppressed_soft_404;
         self.simulated_rotate_advisories += neuro.simulated_rotate_advisories;
         self.simulated_circuit_advisories += neuro.simulated_circuit_advisories;
         self.simulation_notes.extend(neuro.simulation_notes);
@@ -278,7 +306,14 @@ impl RunSummary {
         let _ = writeln!(&mut out, "\n===== Sigma Morpho Summary =====");
         let _ = writeln!(&mut out, "Elapsed: {:.2?}", elapsed);
         let _ = writeln!(&mut out, "Client profile: {}", self.client_profile);
+        let _ = writeln!(&mut out, "Speed mode: {}", self.speed_mode);
         let _ = writeln!(&mut out, "Simulation mode: {}", self.simulation_mode);
+        let _ = writeln!(&mut out, "Findings file: {}", self.findings_file);
+        let _ = writeln!(
+            &mut out,
+            "Soft-404 filter active: {}",
+            self.soft_404_filter_active
+        );
         let _ = writeln!(&mut out, "Total requests: {}", self.total_requests);
         let _ = writeln!(&mut out, "2xx: {}", self.success_2xx);
         let _ = writeln!(&mut out, "3xx: {}", self.redirect_3xx);
@@ -321,6 +356,12 @@ impl RunSummary {
             &mut out,
             "404 burst events: {}",
             self.not_found_burst_events
+        );
+        let _ = writeln!(&mut out, "Logged findings: {}", self.logged_findings);
+        let _ = writeln!(
+            &mut out,
+            "Suppressed soft-404 matches: {}",
+            self.suppressed_soft_404
         );
         let _ = writeln!(
             &mut out,
@@ -366,6 +407,7 @@ mod tests {
             status: 404,
             latency_ms: 20,
             body_size: 0,
+            body_fingerprint: 0,
             transport_error: false,
         });
         summary.record(&ResponseMetric {
@@ -373,6 +415,7 @@ mod tests {
             status: 429,
             latency_ms: 30,
             body_size: 0,
+            body_fingerprint: 0,
             transport_error: false,
         });
 

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use url::Url;
 
 use crate::core::research::ScenarioKind;
+use crate::core::speed::SpeedMode;
 use crate::network::profile::ClientProfile;
 
 #[derive(Debug, Parser)]
@@ -43,6 +44,28 @@ struct CliArgs {
     #[arg(long, default_value_t = 800)]
     latency_threshold_ms: u64,
 
+    #[arg(long, value_name = "FINDINGS_FILE", default_value = "findings.txt")]
+    findings_file: PathBuf,
+
+    #[arg(
+        long,
+        value_name = "STATUS_LIST",
+        default_value = "200,204,301,302,307,308,401,403,405,500"
+    )]
+    interesting_statuses: String,
+
+    #[arg(long, default_value_t = 0)]
+    min_body_bytes: usize,
+
+    #[arg(long)]
+    max_body_bytes: Option<usize>,
+
+    #[arg(long)]
+    disable_soft_404_filter: bool,
+
+    #[arg(long, value_enum, default_value_t = SpeedMode::Balanced)]
+    speed_mode: SpeedMode,
+
     #[arg(long, value_enum, default_value_t = ClientProfile::ResearchDefault)]
     client_profile: ClientProfile,
 
@@ -70,6 +93,12 @@ pub struct AppConfig {
     pub min_delay_ms: u64,
     pub max_delay_ms: u64,
     pub latency_threshold_ms: u64,
+    pub findings_file: PathBuf,
+    pub interesting_statuses: Vec<u16>,
+    pub min_body_bytes: usize,
+    pub max_body_bytes: Option<usize>,
+    pub disable_soft_404_filter: bool,
+    pub speed_mode: SpeedMode,
     pub client_profile: ClientProfile,
     pub simulation_mode: bool,
     pub scenario: Option<ScenarioKind>,
@@ -92,6 +121,13 @@ impl AppConfig {
         if args.min_delay_ms > args.max_delay_ms {
             bail!("--min-delay-ms cannot be greater than --max-delay-ms");
         }
+        if args
+            .max_body_bytes
+            .map(|max| max < args.min_body_bytes)
+            .unwrap_or(false)
+        {
+            bail!("--max-body-bytes cannot be smaller than --min-body-bytes");
+        }
         if args.compare_profiles && args.scenario.is_none() {
             bail!("--compare-profiles can only be used together with --scenario");
         }
@@ -106,6 +142,7 @@ impl AppConfig {
             .with_context(|| format!("Invalid --base-url: {}", raw_base_url))?;
 
         validate_target(&base_url, args.authorized_target)?;
+        let interesting_statuses = parse_status_list(&args.interesting_statuses)?;
         let initial_delay_ms = args.client_profile.adjusted_initial_delay(
             args.initial_delay_ms,
             args.min_delay_ms,
@@ -122,6 +159,12 @@ impl AppConfig {
             min_delay_ms: args.min_delay_ms,
             max_delay_ms: args.max_delay_ms,
             latency_threshold_ms: args.latency_threshold_ms,
+            findings_file: args.findings_file,
+            interesting_statuses,
+            min_body_bytes: args.min_body_bytes,
+            max_body_bytes: args.max_body_bytes,
+            disable_soft_404_filter: args.disable_soft_404_filter,
+            speed_mode: args.speed_mode,
             client_profile: args.client_profile,
             simulation_mode: args.simulation_mode,
             scenario: args.scenario,
@@ -231,10 +274,40 @@ fn is_local_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
 }
 
+fn parse_status_list(raw: &str) -> Result<Vec<u16>> {
+    let mut parsed = Vec::new();
+
+    for part in raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let status = trimmed
+            .parse::<u16>()
+            .with_context(|| format!("Invalid status code in --interesting-statuses: {trimmed}"))?;
+
+        if !(100..=599).contains(&status) {
+            bail!("Status code out of range in --interesting-statuses: {status}");
+        }
+
+        if !parsed.contains(&status) {
+            parsed.push(status);
+        }
+    }
+
+    if parsed.is_empty() {
+        bail!("--interesting-statuses cannot be empty");
+    }
+
+    Ok(parsed)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{validate_target, AppConfig};
+    use super::{parse_status_list, validate_target, AppConfig};
     use crate::core::research::ScenarioKind;
+    use crate::core::speed::SpeedMode;
     use crate::network::profile::ClientProfile;
     use anyhow::Result;
     use std::fs;
@@ -280,6 +353,12 @@ mod tests {
             min_delay_ms: 25,
             max_delay_ms: 100,
             latency_threshold_ms: 500,
+            findings_file: "findings.txt".into(),
+            interesting_statuses: vec![200, 403],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
             simulation_mode: false,
             scenario: None,
@@ -314,6 +393,12 @@ mod tests {
             min_delay_ms: 25,
             max_delay_ms: 100,
             latency_threshold_ms: 500,
+            findings_file: "findings.txt".into(),
+            interesting_statuses: vec![200, 403],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
             simulation_mode: false,
             scenario: None,
@@ -342,6 +427,12 @@ mod tests {
             min_delay_ms: 25,
             max_delay_ms: 250,
             latency_threshold_ms: 500,
+            findings_file: "findings.txt".into(),
+            interesting_statuses: vec![200, 403],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ApiDiagnostic,
             simulation_mode: true,
             scenario: Some(ScenarioKind::RateLimit),
@@ -351,5 +442,13 @@ mod tests {
         assert_eq!(cfg.scenario, Some(ScenarioKind::RateLimit));
         assert!(cfg.compare_profiles);
         assert!(cfg.simulation_mode);
+    }
+
+    #[test]
+    fn status_list_parser_deduplicates_and_validates() -> Result<()> {
+        let statuses = parse_status_list("200, 403, 200, 500")?;
+        assert_eq!(statuses, vec![200, 403, 500]);
+        assert!(parse_status_list("700").is_err());
+        Ok(())
     }
 }

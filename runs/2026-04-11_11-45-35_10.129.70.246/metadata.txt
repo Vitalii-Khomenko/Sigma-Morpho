@@ -1,6 +1,0 @@
-target=http://10.129.70.246
-started_at=2026-04-11T11:45:35+02:00
-wordlist=dict
-workers=4
-rounds=1
-mode=full

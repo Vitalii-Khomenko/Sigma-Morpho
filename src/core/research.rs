@@ -150,6 +150,7 @@ fn build_scenario_metrics(scenario: ScenarioKind) -> Vec<ResponseMetric> {
                 status: 200,
                 latency_ms: 60 + (idx % 3) as u64 * 10,
                 body_size: 128,
+                body_fingerprint: 0,
                 transport_error: false,
             })
             .collect(),
@@ -195,6 +196,7 @@ fn metric(path: &str, status: u16, latency_ms: u64) -> ResponseMetric {
         status,
         latency_ms,
         body_size: if status == 200 { 128 } else { 0 },
+        body_fingerprint: 0,
         transport_error: false,
     }
 }
@@ -214,6 +216,7 @@ impl MetricExt for ResponseMetric {
 mod tests {
     use super::{run_scenario, ScenarioKind};
     use crate::cli::AppConfig;
+    use crate::core::speed::SpeedMode;
     use crate::network::profile::ClientProfile;
     use url::Url;
 
@@ -229,6 +232,12 @@ mod tests {
             min_delay_ms: 25,
             max_delay_ms: 500,
             latency_threshold_ms: 300,
+            findings_file: "findings.txt".into(),
+            interesting_statuses: vec![200, 403],
+            min_body_bytes: 0,
+            max_body_bytes: None,
+            disable_soft_404_filter: false,
+            speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
             simulation_mode: true,
             scenario: Some(ScenarioKind::MixedDefense),

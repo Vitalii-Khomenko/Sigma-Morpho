@@ -1,4 +1,0 @@
- 220559 dict/DirBuster-2007_directory-list-2.3-medium.txt
-    269 dict/api-endpoints.txt
-  62281 dict/raft-large-directories.txt
- 283109 total

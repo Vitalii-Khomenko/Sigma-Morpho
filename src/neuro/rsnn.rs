@@ -421,6 +421,7 @@ mod tests {
                     status: 429,
                     latency_ms: 350,
                     body_size: 0,
+                    body_fingerprint: 0,
                     transport_error: false,
                 }
             } else {
@@ -429,6 +430,7 @@ mod tests {
                     status: 200,
                     latency_ms: 40,
                     body_size: 64,
+                    body_fingerprint: 0,
                     transport_error: false,
                 }
             };
@@ -465,6 +467,7 @@ mod tests {
                     status: 429,
                     latency_ms: 700,
                     body_size: 0,
+                    body_fingerprint: 0,
                     transport_error: false,
                 },
                 delay,
@@ -501,6 +504,7 @@ mod tests {
                     status: 429,
                     latency_ms: 900,
                     body_size: 0,
+                    body_fingerprint: 0,
                     transport_error: false,
                 },
                 delay,
@@ -517,6 +521,7 @@ mod tests {
                     status: 200,
                     latency_ms: 80,
                     body_size: 64,
+                    body_fingerprint: 0,
                     transport_error: false,
                 },
                 delay,

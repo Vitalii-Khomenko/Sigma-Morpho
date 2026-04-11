@@ -1,0 +1,41 @@
+[*] Sigma Morpho started
+[*] Target: http://10.129.70.246/
+[*] Client profile: research-default
+[*] Workload: 62540 paths x 1 rounds, workers: 40
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[FINDING] status=403 bytes=278 latency=207ms path=/images
+[FINDING] status=403 bytes=278 latency=207ms path=/js
+[FINDING] status=403 bytes=278 latency=218ms path=/css
+[FINDING] status=403 bytes=278 latency=279ms path=/themes
+[FINDING] status=403 bytes=278 latency=151ms path=/uploads
+[FINDING] status=403 bytes=278 latency=238ms path=/fonts
+[PROGRESS] processed=1000/62540 (1.60%) delay=500ms profile=cautious
+[PROGRESS] processed=2000/62540 (3.20%) delay=500ms profile=cautious
+[PROGRESS] processed=3000/62540 (4.80%) delay=500ms profile=cautious
+[PROGRESS] processed=4000/62540 (6.40%) delay=500ms profile=defensive
+[FINDING] status=403 bytes=278 latency=73ms path=/server-status
+[PROGRESS] processed=5000/62540 (7.99%) delay=500ms profile=cautious
+[PROGRESS] processed=6000/62540 (9.59%) delay=500ms profile=defensive
+[PROGRESS] processed=7000/62540 (11.19%) delay=500ms profile=defensive
+[PROGRESS] processed=8000/62540 (12.79%) delay=500ms profile=cautious
+[PROGRESS] processed=9000/62540 (14.39%) delay=500ms profile=cautious
+[PROGRESS] processed=10000/62540 (15.99%) delay=500ms profile=defensive
+[PROGRESS] processed=11000/62540 (17.59%) delay=500ms profile=defensive
+[PROGRESS] processed=12000/62540 (19.19%) delay=500ms profile=cautious
+[PROGRESS] processed=13000/62540 (20.79%) delay=500ms profile=cautious
+[PROGRESS] processed=14000/62540 (22.39%) delay=500ms profile=cautious
+[PROGRESS] processed=15000/62540 (23.98%) delay=500ms profile=defensive
+[PROGRESS] processed=16000/62540 (25.58%) delay=500ms profile=defensive
+[PROGRESS] processed=17000/62540 (27.18%) delay=500ms profile=defensive
+[PROGRESS] processed=18000/62540 (28.78%) delay=500ms profile=defensive
+[PROGRESS] processed=19000/62540 (30.38%) delay=500ms profile=cautious
+[PROGRESS] processed=20000/62540 (31.98%) delay=500ms profile=cautious
+[PROGRESS] processed=21000/62540 (33.58%) delay=500ms profile=defensive
+[PROGRESS] processed=22000/62540 (35.18%) delay=500ms profile=cautious
+[PROGRESS] processed=23000/62540 (36.78%) delay=500ms profile=cautious
+[FINDING] status=403 bytes=278 latency=157ms path=/cdn-cgi
+[PROGRESS] processed=24000/62540 (38.38%) delay=500ms profile=cautious
+[PROGRESS] processed=25000/62540 (39.97%) delay=500ms profile=cautious
+[PROGRESS] processed=26000/62540 (41.57%) delay=500ms profile=cautious
+[PROGRESS] processed=27000/62540 (43.17%) delay=500ms profile=defensive
+[PROGRESS] processed=28000/62540 (44.77%) delay=500ms profile=cautious

@@ -106,6 +106,7 @@ mod tests {
             status: 429,
             latency_ms: 900,
             body_size: 0,
+            body_fingerprint: 0,
             transport_error: false,
         };
         let decision = RsnnDecision {

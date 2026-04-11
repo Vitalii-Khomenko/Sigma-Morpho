@@ -1,5 +1,0 @@
-[*] Sigma Morpho started
-[*] Target: http://10.129.70.246/
-[*] Client profile: research-default
-[*] Workload: 260110 paths x 1 rounds, workers: 4
-[NEURO] profile=cautious status=403 latency=579ms -> delay=385ms

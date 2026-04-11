@@ -1,1 +1,0 @@
-target/release/sigma_morpho --base-url http://10.129.70.246 --wordlist dict --workers 4 --rounds 1 --initial-delay-ms 120 --min-delay-ms 80 --max-delay-ms 2000 --latency-threshold-ms 700 --client-profile research-default --simulation-mode --authorized-target

@@ -131,6 +131,7 @@ mod tests {
             status: 404,
             latency_ms: 1000,
             body_size: 10,
+            body_fingerprint: 0,
             transport_error: false,
         };
         let cfg = EncoderConfig {

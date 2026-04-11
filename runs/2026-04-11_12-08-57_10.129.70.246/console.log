@@ -1,0 +1,140 @@
+[*] Sigma Morpho started
+[*] Target: http://10.129.70.246/
+[*] Client profile: research-default
+[*] Workload: 62540 paths x 1 rounds, workers: 80
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[FINDING] status=301 bytes=315 latency=174ms path=/images
+[FINDING] status=301 bytes=314 latency=442ms path=/fonts
+[FINDING] status=301 bytes=311 latency=3672ms path=/js
+[FINDING] status=301 bytes=315 latency=4685ms path=/themes
+[PROGRESS] processed=1000/62540 (1.60%) delay=50ms profile=defensive
+[NEURO] profile=cautious status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5000ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=cautious status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[NEURO] profile=defensive status=0 latency=5001ms -> delay=50ms
+[PROGRESS] processed=2000/62540 (3.20%) delay=50ms profile=cautious
+[PROGRESS] processed=3000/62540 (4.80%) delay=50ms profile=defensive
+[PROGRESS] processed=4000/62540 (6.40%) delay=50ms profile=cautious
+[FINDING] status=403 bytes=278 latency=66ms path=/server-status
+[NEURO] profile=cautious status=403 latency=66ms -> delay=50ms
+[PROGRESS] processed=5000/62540 (7.99%) delay=50ms profile=cautious
+[PROGRESS] processed=6000/62540 (9.59%) delay=50ms profile=defensive
+[PROGRESS] processed=7000/62540 (11.19%) delay=50ms profile=cautious
+[PROGRESS] processed=8000/62540 (12.79%) delay=50ms profile=defensive
+[PROGRESS] processed=9000/62540 (14.39%) delay=50ms profile=cautious
+[PROGRESS] processed=10000/62540 (15.99%) delay=50ms profile=defensive
+[PROGRESS] processed=11000/62540 (17.59%) delay=50ms profile=cautious
+[PROGRESS] processed=12000/62540 (19.19%) delay=50ms profile=defensive
+[PROGRESS] processed=13000/62540 (20.79%) delay=50ms profile=cautious
+[PROGRESS] processed=14000/62540 (22.39%) delay=50ms profile=defensive
+[PROGRESS] processed=15000/62540 (23.98%) delay=50ms profile=cautious
+[PROGRESS] processed=16000/62540 (25.58%) delay=50ms profile=defensive
+[PROGRESS] processed=17000/62540 (27.18%) delay=50ms profile=cautious
+[PROGRESS] processed=18000/62540 (28.78%) delay=50ms profile=defensive
+[PROGRESS] processed=19000/62540 (30.38%) delay=50ms profile=cautious
+[PROGRESS] processed=20000/62540 (31.98%) delay=50ms profile=defensive
+[PROGRESS] processed=21000/62540 (33.58%) delay=50ms profile=cautious
+[PROGRESS] processed=22000/62540 (35.18%) delay=50ms profile=defensive
+[FINDING] status=301 bytes=316 latency=81ms path=/cdn-cgi
+[PROGRESS] processed=23000/62540 (36.78%) delay=50ms profile=cautious
+[PROGRESS] processed=24000/62540 (38.38%) delay=50ms profile=defensive
+[PROGRESS] processed=25000/62540 (39.97%) delay=50ms profile=cautious
+[PROGRESS] processed=26000/62540 (41.57%) delay=50ms profile=cautious
+[PROGRESS] processed=27000/62540 (43.17%) delay=50ms profile=cautious
+[PROGRESS] processed=28000/62540 (44.77%) delay=50ms profile=cautious
+[PROGRESS] processed=29000/62540 (46.37%) delay=50ms profile=cautious
+[PROGRESS] processed=30000/62540 (47.97%) delay=50ms profile=cautious
+[PROGRESS] processed=31000/62540 (49.57%) delay=50ms profile=cautious
+[PROGRESS] processed=32000/62540 (51.17%) delay=50ms profile=cautious
+[PROGRESS] processed=33000/62540 (52.77%) delay=50ms profile=cautious
+[PROGRESS] processed=34000/62540 (54.37%) delay=50ms profile=cautious
+[PROGRESS] processed=35000/62540 (55.96%) delay=50ms profile=cautious
+[PROGRESS] processed=36000/62540 (57.56%) delay=50ms profile=cautious
+[PROGRESS] processed=37000/62540 (59.16%) delay=50ms profile=defensive
+[PROGRESS] processed=38000/62540 (60.76%) delay=50ms profile=cautious
+[PROGRESS] processed=39000/62540 (62.36%) delay=50ms profile=defensive
+[PROGRESS] processed=40000/62540 (63.96%) delay=50ms profile=cautious
+[PROGRESS] processed=41000/62540 (65.56%) delay=50ms profile=defensive
+[PROGRESS] processed=42000/62540 (67.16%) delay=50ms profile=cautious
+[PROGRESS] processed=43000/62540 (68.76%) delay=50ms profile=defensive
+[PROGRESS] processed=44000/62540 (70.35%) delay=50ms profile=cautious
+[PROGRESS] processed=45000/62540 (71.95%) delay=50ms profile=defensive
+[PROGRESS] processed=46000/62540 (73.55%) delay=50ms profile=cautious
+[PROGRESS] processed=47000/62540 (75.15%) delay=50ms profile=defensive
+[PROGRESS] processed=48000/62540 (76.75%) delay=50ms profile=cautious
+[PROGRESS] processed=49000/62540 (78.35%) delay=50ms profile=cautious
+[PROGRESS] processed=50000/62540 (79.95%) delay=50ms profile=cautious
+[PROGRESS] processed=51000/62540 (81.55%) delay=50ms profile=cautious
+[PROGRESS] processed=52000/62540 (83.15%) delay=50ms profile=cautious
+[PROGRESS] processed=53000/62540 (84.75%) delay=50ms profile=cautious
+[PROGRESS] processed=54000/62540 (86.34%) delay=50ms profile=cautious
+[PROGRESS] processed=55000/62540 (87.94%) delay=50ms profile=cautious
+[PROGRESS] processed=56000/62540 (89.54%) delay=50ms profile=cautious
+[PROGRESS] processed=57000/62540 (91.14%) delay=50ms profile=cautious
+[PROGRESS] processed=58000/62540 (92.74%) delay=50ms profile=cautious
+[PROGRESS] processed=59000/62540 (94.34%) delay=50ms profile=cautious
+[PROGRESS] processed=60000/62540 (95.94%) delay=50ms profile=defensive
+[PROGRESS] processed=61000/62540 (97.54%) delay=50ms profile=cautious
+[PROGRESS] processed=62000/62540 (99.14%) delay=50ms profile=defensive
+[PROGRESS] processed=62540/62540 (100.00%) delay=50ms profile=cautious
+
+===== Sigma Morpho Summary =====
+Elapsed: 116.02s
+Client profile: research-default
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-08-57_10.129.70.246/findings.txt
+Soft-404 filter active: true
+Total requests: 62540
+2xx: 0
+3xx: 5
+4xx: 62506
+404s: 62505
+Protective block signals (403/429/503): 1
+5xx: 0
+Transport errors: 29
+Avg latency: 96.17 ms
+Min latency: 42 ms
+Max latency: 5001 ms
+Total body bytes: 17190724
+Final adaptive delay: 50 ms
+Final adaptive profile: cautious
+Neuro decisions: 62540
+Throttle increases: 62340
+Throttle decreases: 0
+Cautious entries: 2760
+Defensive entries: 2759
+Baseline recoveries: 0
+Latency burst events: 159
+Block burst events: 30
+404 burst events: 0
+Logged findings: 6
+Suppressed soft-404 matches: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+

@@ -11,6 +11,7 @@ fn summary_render_includes_neuro_profile() {
         status: 200,
         latency_ms: 42,
         body_size: 128,
+        body_fingerprint: 0,
         transport_error: false,
     });
 
