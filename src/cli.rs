@@ -29,6 +29,9 @@ struct CliArgs {
     #[arg(long, default_value_t = 1)]
     rounds: usize,
 
+    #[arg(long, default_value_t = 0)]
+    recursion_depth: u8,
+
     #[arg(long, default_value_t = 5000)]
     timeout_ms: u64,
 
@@ -88,6 +91,7 @@ pub struct AppConfig {
     pub wordlist: PathBuf,
     pub workers: usize,
     pub rounds: usize,
+    pub recursion_depth: u8,
     pub timeout_ms: u64,
     pub initial_delay_ms: u64,
     pub min_delay_ms: u64,
@@ -154,6 +158,7 @@ impl AppConfig {
             wordlist: args.wordlist,
             workers: args.workers,
             rounds: args.rounds,
+            recursion_depth: args.recursion_depth,
             timeout_ms: args.client_profile.adjusted_timeout(args.timeout_ms),
             initial_delay_ms,
             min_delay_ms: args.min_delay_ms,
@@ -348,6 +353,7 @@ mod tests {
             wordlist: path.clone(),
             workers: 1,
             rounds: 1,
+            recursion_depth: 0,
             timeout_ms: 1000,
             initial_delay_ms: 25,
             min_delay_ms: 25,
@@ -388,6 +394,7 @@ mod tests {
             wordlist: dir.clone(),
             workers: 1,
             rounds: 1,
+            recursion_depth: 0,
             timeout_ms: 1000,
             initial_delay_ms: 25,
             min_delay_ms: 25,
@@ -422,6 +429,7 @@ mod tests {
             wordlist: "wordlist.txt".into(),
             workers: 1,
             rounds: 1,
+            recursion_depth: 0,
             timeout_ms: 1000,
             initial_delay_ms: 50,
             min_delay_ms: 25,

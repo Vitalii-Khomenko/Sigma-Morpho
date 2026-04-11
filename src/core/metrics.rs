@@ -18,6 +18,7 @@ pub struct ResponseMetric {
 #[derive(Debug, Clone)]
 pub struct RunSummary {
     pub total_requests: u64,
+    pub discovered_jobs: u64,
     pub success_2xx: u64,
     pub redirect_3xx: u64,
     pub client_4xx: u64,
@@ -52,12 +53,14 @@ pub struct RunSummary {
     pub simulated_circuit_advisories: u64,
     pub simulation_notes: Vec<String>,
     pub final_profile: AdaptiveProfile,
+    pub recursion_depth: u8,
 }
 
 impl Default for RunSummary {
     fn default() -> Self {
         Self {
             total_requests: 0,
+            discovered_jobs: 0,
             success_2xx: 0,
             redirect_3xx: 0,
             client_4xx: 0,
@@ -92,6 +95,7 @@ impl Default for RunSummary {
             simulated_circuit_advisories: 0,
             simulation_notes: Vec::new(),
             final_profile: AdaptiveProfile::Baseline,
+            recursion_depth: 0,
         }
     }
 }
@@ -242,6 +246,7 @@ impl RunSummary {
 
     pub fn merge(&mut self, other: RunSummary) {
         self.total_requests += other.total_requests;
+        self.discovered_jobs += other.discovered_jobs;
         self.success_2xx += other.success_2xx;
         self.redirect_3xx += other.redirect_3xx;
         self.client_4xx += other.client_4xx;
@@ -309,12 +314,14 @@ impl RunSummary {
         let _ = writeln!(&mut out, "Speed mode: {}", self.speed_mode);
         let _ = writeln!(&mut out, "Simulation mode: {}", self.simulation_mode);
         let _ = writeln!(&mut out, "Findings file: {}", self.findings_file);
+        let _ = writeln!(&mut out, "Recursion depth: {}", self.recursion_depth);
         let _ = writeln!(
             &mut out,
             "Soft-404 filter active: {}",
             self.soft_404_filter_active
         );
         let _ = writeln!(&mut out, "Total requests: {}", self.total_requests);
+        let _ = writeln!(&mut out, "Discovered jobs: {}", self.discovered_jobs);
         let _ = writeln!(&mut out, "2xx: {}", self.success_2xx);
         let _ = writeln!(&mut out, "3xx: {}", self.redirect_3xx);
         let _ = writeln!(&mut out, "4xx: {}", self.client_4xx);
@@ -398,6 +405,7 @@ mod tests {
     use crate::core::profile::AdaptiveProfile;
     use crate::neuro::encoder::PatternSummary;
     use crate::neuro::rsnn::{NeuroAction, RsnnDecision};
+    use std::time::Duration;
 
     #[test]
     fn summary_counts_not_found_and_blocks() {
@@ -452,5 +460,16 @@ mod tests {
         assert_eq!(telemetry.cautious_entries, 1);
         assert_eq!(telemetry.defensive_entries, 1);
         assert_eq!(telemetry.block_burst_events, 1);
+    }
+
+    #[test]
+    fn summary_render_includes_recursion_fields() {
+        let mut summary = RunSummary::default();
+        summary.recursion_depth = 2;
+        summary.discovered_jobs = 42;
+
+        let rendered = summary.render(Duration::from_millis(100));
+        assert!(rendered.contains("Recursion depth: 2"));
+        assert!(rendered.contains("Discovered jobs: 42"));
     }
 }

@@ -48,6 +48,7 @@ cargo run -- \
   --wordlist wordlist.txt \
   --workers 16 \
   --rounds 2 \
+  --recursion-depth 1 \
   --client-profile browser-desktop
 ```
 
@@ -91,6 +92,8 @@ cargo run -- \
   Accepts either a single file or a directory such as `dict/`. When a directory is used, Sigma Morpho loads supported text wordlists, normalizes entries, and removes duplicates.
 - `--simulation-mode`
   Enables simulation-only advisory events for actions inspired by the research ideas file.
+- `--recursion-depth <n>`
+  Enables dynamic directory recursion. When Sigma Morpho gets a directory-like hit, it can enqueue child paths from the seed corpus until depth `n`.
 - `--scenario <scenario>`
   Runs a local replay harness without live network requests.
 - `--compare-profiles`

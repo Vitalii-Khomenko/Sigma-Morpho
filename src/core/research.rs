@@ -227,6 +227,7 @@ mod tests {
             wordlist: "wordlist.txt".into(),
             workers: 4,
             rounds: 1,
+            recursion_depth: 0,
             timeout_ms: 1000,
             initial_delay_ms: 50,
             min_delay_ms: 25,

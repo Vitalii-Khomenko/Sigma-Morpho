@@ -97,6 +97,7 @@ Sigma Morpho now supports four safe research extensions derived from the ideas f
 ## Concurrency model
 
 - Workers generate HTTP requests concurrently.
+- A shared job queue can grow dynamically when recursion is enabled.
 - Workers send `ResponseMetric` events over `tokio::sync::mpsc`.
 - A dedicated neuro actor runs in `spawn_blocking` so CPU-bound inference does not stall async I/O.
 - The actor broadcasts global delay over `tokio::sync::watch`.

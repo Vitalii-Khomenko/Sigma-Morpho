@@ -4,10 +4,11 @@
 
 1. CLI validates the target and loads the path corpus.
 2. The engine fans out jobs to async workers.
-3. Each worker executes a request and emits a `ResponseMetric`.
-4. The neuro actor consumes metrics, updates the RSNN, and computes the next shared delay.
-5. Workers observe delay changes through a watch channel before subsequent requests.
-6. Final summaries merge HTTP-level and neuro-level telemetry.
+3. When recursion is enabled, directory-like hits can enqueue child jobs into the shared queue until the configured depth limit is reached.
+4. Each worker executes a request and emits a `ResponseMetric`.
+5. The neuro actor consumes metrics, updates the RSNN, and computes the next shared delay.
+6. Workers observe delay changes through a watch channel before subsequent requests.
+7. Final summaries merge HTTP-level and neuro-level telemetry.
 
 ## Why actor isolation matters
 

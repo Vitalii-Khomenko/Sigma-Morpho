@@ -1,0 +1,70 @@
+[*] Sigma Morpho started
+[*] Target: http://10.129.70.246/
+[*] Client profile: research-default
+[*] Workload: 6 seed paths x 1 rounds, workers: 12, recursion depth: 1
+[*] Soft-404 baseline: status=404 bytes=275 fingerprint=13195598013690268970
+[RECURSE] base=/server-status depth=0 added_children=6
+[FINDING] status=403 bytes=278 latency=224ms path=/server-status
+[RECURSE] base=/cdn-cgi depth=0 added_children=6
+[FINDING] status=301 bytes=316 latency=289ms path=/cdn-cgi
+[RECURSE] base=/fonts depth=0 added_children=6
+[RECURSE] base=/images depth=0 added_children=6
+[RECURSE] base=/themes depth=0 added_children=6
+[FINDING] status=301 bytes=314 latency=291ms path=/fonts
+[FINDING] status=301 bytes=315 latency=291ms path=/images
+[FINDING] status=301 bytes=315 latency=291ms path=/themes
+[RECURSE] base=/js depth=0 added_children=6
+[FINDING] status=301 bytes=311 latency=303ms path=/js
+[FINDING] status=403 bytes=278 latency=152ms path=/server-status/images
+[NEURO] profile=cautious status=403 latency=152ms -> delay=50ms
+[FINDING] status=403 bytes=278 latency=152ms path=/server-status/fonts
+[NEURO] profile=cautious status=403 latency=152ms -> delay=50ms
+[FINDING] status=403 bytes=278 latency=152ms path=/server-status/cdn-cgi
+[NEURO] profile=defensive status=403 latency=152ms -> delay=50ms
+[FINDING] status=403 bytes=278 latency=153ms path=/server-status/js
+[NEURO] profile=defensive status=403 latency=153ms -> delay=50ms
+[FINDING] status=403 bytes=278 latency=162ms path=/server-status/themes
+[NEURO] profile=defensive status=403 latency=162ms -> delay=50ms
+[FINDING] status=403 bytes=278 latency=228ms path=/server-status/server-status
+[NEURO] profile=defensive status=403 latency=228ms -> delay=50ms
+[PROGRESS] processed=42/42 (100.00%) delay=50ms profile=defensive
+
+===== Sigma Morpho Summary =====
+Elapsed: 3.13s
+Client profile: research-default
+Speed mode: aggressive
+Simulation mode: true
+Findings file: runs/2026-04-11_12-26-24_quick-recursive_10.129.70.246/findings.txt
+Recursion depth: 1
+Soft-404 filter active: true
+Total requests: 42
+Discovered jobs: 42
+2xx: 0
+3xx: 5
+4xx: 37
+404s: 30
+Protective block signals (403/429/503): 7
+5xx: 0
+Transport errors: 0
+Avg latency: 261.57 ms
+Min latency: 60 ms
+Max latency: 2288 ms
+Total body bytes: 11767
+Final adaptive delay: 50 ms
+Final adaptive profile: defensive
+Neuro decisions: 42
+Throttle increases: 36
+Throttle decreases: 0
+Cautious entries: 3
+Defensive entries: 3
+Baseline recoveries: 0
+Latency burst events: 3
+Block burst events: 7
+404 burst events: 0
+Logged findings: 12
+Suppressed soft-404 matches: 0
+Simulated rotate advisories: 1
+Simulated circuit advisories: 0
+Simulation notes:
+  - [SIMULATION] rotate-user-agent-advisory triggered by repeated protective blocks at /server-status/cdn-cgi
+

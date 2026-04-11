@@ -28,10 +28,11 @@ async fn main() -> Result<()> {
         println!("[*] Target: {}", config.base_url);
         println!("[*] Client profile: {}", config.client_profile.as_str());
         println!(
-            "[*] Workload: {} paths x {} rounds, workers: {}",
+            "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
             paths.len(),
             config.rounds,
-            config.workers
+            config.workers,
+            config.recursion_depth
         );
 
         let summary = core::engine::run(config, paths).await?;

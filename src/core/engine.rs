@@ -6,16 +6,17 @@ use crate::network::client::NetworkClient;
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
 use rand::random;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
 pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
-    let jobs = Arc::new(build_jobs(&paths, config.rounds));
-    let total_jobs = jobs.len();
+    let initial_jobs = build_jobs(&paths, config.rounds);
+    let initial_total_jobs = initial_jobs.len();
 
     let client = Arc::new(NetworkClient::new(
         config.base_url.clone(),
@@ -36,7 +37,12 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         config.max_body_bytes,
         soft_404_fingerprint.clone(),
     );
-    let index = Arc::new(AtomicUsize::new(0));
+    let seed_paths = Arc::new(paths);
+    let queue = JobQueue::new(
+        initial_jobs,
+        Arc::clone(&seed_paths),
+        config.recursion_depth,
+    );
 
     let metric_buffer = (config.workers.saturating_mul(8)).max(64);
     let (metric_tx, metric_rx) = mpsc::channel::<ResponseMetric>(metric_buffer);
@@ -46,15 +52,14 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         metric_rx,
         delay_tx,
         &config,
-        total_jobs as u64,
+        Arc::clone(&queue.scheduled_total),
         findings_config,
     );
 
     let mut worker_handles = Vec::with_capacity(config.workers);
     for worker_id in 0..config.workers {
         let worker_client = Arc::clone(&client);
-        let worker_jobs = Arc::clone(&jobs);
-        let worker_index = Arc::clone(&index);
+        let worker_queue = Arc::clone(&queue);
         let worker_metric_tx = metric_tx.clone();
         let worker_delay_rx = delay_rx.clone();
 
@@ -62,8 +67,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
             worker_loop(
                 worker_id,
                 worker_client,
-                worker_jobs,
-                worker_index,
+                worker_queue,
                 worker_metric_tx,
                 worker_delay_rx,
             )
@@ -81,6 +85,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     summary.simulation_mode = config.simulation_mode;
     summary.findings_file = config.findings_file.display().to_string();
     summary.soft_404_filter_active = soft_404_fingerprint.is_some();
+    summary.recursion_depth = config.recursion_depth;
     for handle in worker_handles {
         let worker_summary = handle.await.context("Worker join failed")??;
         summary.merge(worker_summary);
@@ -89,53 +94,174 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let neuro = actor_handle.await.context("Neuro actor join failed")??;
     summary.apply_neuro(neuro);
     summary.final_delay_ms = *delay_rx.borrow();
+    summary.discovered_jobs = queue.scheduled_total.load(Ordering::Relaxed) as u64;
 
-    if summary.total_requests != total_jobs as u64 {
+    if summary.total_requests != summary.discovered_jobs {
         println!(
-            "[*] Note: processed {} of {} jobs",
-            summary.total_requests, total_jobs
+            "[*] Note: processed {} of {} scheduled jobs",
+            summary.total_requests, summary.discovered_jobs
+        );
+        println!(
+            "[*] Initial static jobs before recursion: {}",
+            initial_total_jobs
         );
     }
 
     Ok(summary)
 }
 
-fn build_jobs(paths: &[String], rounds: usize) -> Vec<String> {
+fn build_jobs(paths: &[String], rounds: usize) -> Vec<WorkItem> {
     let mut jobs = Vec::with_capacity(paths.len().saturating_mul(rounds));
     for _ in 0..rounds {
-        jobs.extend(paths.iter().cloned());
+        jobs.extend(
+            paths
+                .iter()
+                .cloned()
+                .map(|path| WorkItem { path, depth: 0 }),
+        );
     }
     jobs
+}
+
+#[derive(Clone, Debug)]
+struct WorkItem {
+    path: String,
+    depth: u8,
+}
+
+struct JobQueue {
+    queue: Mutex<VecDeque<WorkItem>>,
+    visited: Mutex<HashSet<String>>,
+    pending: AtomicUsize,
+    scheduled_total: Arc<AtomicUsize>,
+    notify: Notify,
+    seed_paths: Arc<Vec<String>>,
+    recursion_depth: u8,
+}
+
+impl JobQueue {
+    fn new(
+        initial_jobs: Vec<WorkItem>,
+        seed_paths: Arc<Vec<String>>,
+        recursion_depth: u8,
+    ) -> Arc<Self> {
+        let initial_jobs_len = initial_jobs.len();
+        let mut visited = HashSet::with_capacity(initial_jobs.len());
+        for job in &initial_jobs {
+            visited.insert(job.path.clone());
+        }
+
+        Arc::new(Self {
+            queue: Mutex::new(initial_jobs.into_iter().collect()),
+            visited: Mutex::new(visited),
+            pending: AtomicUsize::new(initial_jobs_len),
+            scheduled_total: Arc::new(AtomicUsize::new(initial_jobs_len)),
+            notify: Notify::new(),
+            seed_paths,
+            recursion_depth,
+        })
+    }
+
+    async fn pop(&self) -> Option<WorkItem> {
+        loop {
+            if let Some(job) = self.queue.lock().await.pop_front() {
+                return Some(job);
+            }
+
+            if self.pending.load(Ordering::Relaxed) == 0 {
+                return None;
+            }
+
+            self.notify.notified().await;
+        }
+    }
+
+    async fn complete(&self) {
+        let previous = self.pending.fetch_sub(1, Ordering::Relaxed);
+        if previous <= 1 {
+            self.notify.notify_waiters();
+        }
+    }
+
+    async fn maybe_enqueue_children(&self, job: &WorkItem, metric: &ResponseMetric) -> usize {
+        if self.recursion_depth == 0 || job.depth >= self.recursion_depth {
+            return 0;
+        }
+
+        if !should_recurse(job, metric) {
+            return 0;
+        }
+
+        let mut discovered = Vec::new();
+        let mut visited = self.visited.lock().await;
+
+        for seed in self.seed_paths.iter() {
+            let child_path = join_paths(&job.path, seed);
+            if visited.insert(child_path.clone()) {
+                discovered.push(WorkItem {
+                    path: child_path,
+                    depth: job.depth + 1,
+                });
+            }
+        }
+        drop(visited);
+
+        let discovered_len = discovered.len();
+        if discovered_len == 0 {
+            return 0;
+        }
+
+        {
+            let mut queue = self.queue.lock().await;
+            for child in discovered {
+                queue.push_back(child);
+            }
+        }
+
+        self.pending.fetch_add(discovered_len, Ordering::Relaxed);
+        self.scheduled_total
+            .fetch_add(discovered_len, Ordering::Relaxed);
+        self.notify.notify_waiters();
+        discovered_len
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn worker_loop(
     _worker_id: usize,
     client: Arc<NetworkClient>,
-    jobs: Arc<Vec<String>>,
-    index: Arc<AtomicUsize>,
+    queue: Arc<JobQueue>,
     metric_tx: mpsc::Sender<ResponseMetric>,
     delay_rx: watch::Receiver<u64>,
 ) -> Result<RunSummary> {
     let mut local = RunSummary::default();
 
     loop {
-        let idx = index.fetch_add(1, Ordering::Relaxed);
-        if idx >= jobs.len() {
+        let Some(job) = queue.pop().await else {
             break;
-        }
+        };
 
-        let path = jobs[idx].clone();
         let delay_ms = *delay_rx.borrow();
         sleep(Duration::from_millis(delay_ms)).await;
 
-        let metric = client.execute_path(&path).await;
+        let metric = client.execute_path(&job.path).await;
+        let discovered = queue.maybe_enqueue_children(&job, &metric).await;
+        if discovered > 0 {
+            println!(
+                "[RECURSE] base={} depth={} added_children={}",
+                metric.path, job.depth, discovered
+            );
+            local.discovered_jobs += discovered as u64;
+        }
 
         local.record(&metric);
 
         if metric_tx.send(metric).await.is_err() {
+            queue.complete().await;
             break;
         }
+
+        queue.complete().await;
     }
 
     Ok(local)
@@ -145,7 +271,7 @@ fn spawn_neuro_actor(
     mut metric_rx: mpsc::Receiver<ResponseMetric>,
     delay_tx: watch::Sender<u64>,
     config: &AppConfig,
-    total_jobs: u64,
+    scheduled_total: Arc<AtomicUsize>,
     findings_config: FindingsConfig,
 ) -> JoinHandle<Result<NeuroTelemetry>> {
     let rsnn_config = RsnnConfig {
@@ -216,7 +342,8 @@ fn spawn_neuro_actor(
                 FindingDecision::FilteredByStatus | FindingDecision::FilteredByBodyLength => {}
             }
 
-            if tick % 1000 == 0 || tick == total_jobs {
+            let total_jobs = scheduled_total.load(Ordering::Relaxed) as u64;
+            if tick % 1000 == 0 || (total_jobs > 0 && tick == total_jobs) {
                 let progress = if total_jobs == 0 {
                     0.0
                 } else {
@@ -266,4 +393,125 @@ async fn probe_soft_404(client: &NetworkClient) -> Option<Soft404Fingerprint> {
     }
 
     fingerprint
+}
+
+fn should_recurse(job: &WorkItem, metric: &ResponseMetric) -> bool {
+    if metric.transport_error {
+        return false;
+    }
+
+    let looks_like_directory = !job.path.rsplit('/').next().unwrap_or("").contains('.');
+
+    looks_like_directory && matches!(metric.status, 200 | 204 | 301 | 302 | 307 | 308 | 401 | 403)
+}
+
+fn join_paths(base: &str, child: &str) -> String {
+    let base = base.trim_matches('/');
+    let child = child.trim_matches('/');
+
+    if base.is_empty() {
+        child.to_string()
+    } else if child.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}/{child}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{join_paths, should_recurse, JobQueue, WorkItem};
+    use crate::core::metrics::ResponseMetric;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    #[test]
+    fn recurse_only_for_directory_like_interesting_hits() {
+        let job = WorkItem {
+            path: "admin".to_string(),
+            depth: 0,
+        };
+        let metric = ResponseMetric {
+            path: "/admin".to_string(),
+            status: 301,
+            latency_ms: 10,
+            body_size: 20,
+            body_fingerprint: 1,
+            transport_error: false,
+        };
+        assert!(should_recurse(&job, &metric));
+
+        let file_job = WorkItem {
+            path: "robots.txt".to_string(),
+            depth: 0,
+        };
+        assert!(!should_recurse(&file_job, &metric));
+    }
+
+    #[test]
+    fn join_paths_normalizes_slashes() {
+        assert_eq!(join_paths("admin", "api"), "admin/api");
+        assert_eq!(join_paths("/admin/", "/api/"), "admin/api");
+        assert_eq!(join_paths("", "api"), "api");
+    }
+
+    #[tokio::test]
+    async fn queue_adds_children_once_within_depth_limit() {
+        let queue = JobQueue::new(
+            vec![WorkItem {
+                path: "admin".to_string(),
+                depth: 0,
+            }],
+            Arc::new(vec!["api".to_string(), "login".to_string()]),
+            1,
+        );
+        let metric = ResponseMetric {
+            path: "/admin".to_string(),
+            status: 301,
+            latency_ms: 10,
+            body_size: 20,
+            body_fingerprint: 1,
+            transport_error: false,
+        };
+
+        let root = queue.pop().await.expect("root job");
+        let added = queue.maybe_enqueue_children(&root, &metric).await;
+
+        assert_eq!(added, 2);
+        assert_eq!(queue.scheduled_total.load(Ordering::Relaxed), 3);
+
+        let child_a = queue.pop().await.expect("first child");
+        let child_b = queue.pop().await.expect("second child");
+        assert_eq!(child_a.depth, 1);
+        assert_eq!(child_b.depth, 1);
+        assert!(matches!(child_a.path.as_str(), "admin/api" | "admin/login"));
+        assert!(matches!(child_b.path.as_str(), "admin/api" | "admin/login"));
+        assert_ne!(child_a.path, child_b.path);
+    }
+
+    #[tokio::test]
+    async fn queue_stops_recursing_at_configured_depth() {
+        let queue = JobQueue::new(
+            vec![WorkItem {
+                path: "admin/api".to_string(),
+                depth: 1,
+            }],
+            Arc::new(vec!["health".to_string()]),
+            1,
+        );
+        let metric = ResponseMetric {
+            path: "/admin/api".to_string(),
+            status: 301,
+            latency_ms: 10,
+            body_size: 20,
+            body_fingerprint: 1,
+            transport_error: false,
+        };
+
+        let job = queue.pop().await.expect("depth-limited job");
+        let added = queue.maybe_enqueue_children(&job, &metric).await;
+
+        assert_eq!(added, 0);
+        assert_eq!(queue.scheduled_total.load(Ordering::Relaxed), 1);
+    }
 }
