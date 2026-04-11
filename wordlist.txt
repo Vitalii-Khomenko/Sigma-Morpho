@@ -13,3 +13,6 @@ sitemap.xml
 scripts
 vendor
 assets
+css
+js
+themes
