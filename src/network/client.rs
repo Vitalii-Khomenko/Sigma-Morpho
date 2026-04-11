@@ -28,7 +28,12 @@ impl NetworkClient {
             .user_agent(profile.user_agent())
             .default_headers(profile.default_headers())
             .pool_max_idle_per_host(speed_mode.pool_max_idle_per_host(workers))
-            .redirect(reqwest::redirect::Policy::none());
+            .redirect(reqwest::redirect::Policy::none())
+            .use_rustls_tls()
+            .min_tls_version(reqwest::tls::Version::TLS_1_2) // Simulate real fingerprint
+            .brotli(true)
+            .deflate(true)
+            .gzip(true);
 
         if let Some(proxy_url) = tor_proxy {
             let proxy = Proxy::all(&proxy_url)

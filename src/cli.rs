@@ -101,6 +101,12 @@ struct CliArgs {
 
     #[arg(long, value_name = "PASSWORD")]
     tor_password: Option<String>,
+
+    #[arg(long, value_name = "FILE")]
+    snn_state_file: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE")]
+    proxies_file: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -133,6 +139,9 @@ pub struct AppConfig {
     pub tor_proxy: Option<String>,
     pub tor_control: Option<String>,
     pub tor_password: Option<String>,
+    pub snn_state_file: Option<PathBuf>,
+    pub proxies_file: Option<PathBuf>,
+    pub proxies: Vec<String>,
 }
 
 impl AppConfig {
@@ -192,6 +201,18 @@ impl AppConfig {
             args.max_delay_ms,
         );
 
+        let mut proxies = vec![];
+        if let Some(ref path) = args.proxies_file {
+            let content = std::fs::read_to_string(path)
+                .with_context(|| format!("Failed to read proxies file: {}", path.display()))?;
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    proxies.push(trimmed.to_string());
+                }
+            }
+        }
+
         Ok(Self {
             base_url,
             wordlist: args.wordlist,
@@ -221,6 +242,9 @@ impl AppConfig {
             tor_proxy: args.tor_proxy,
             tor_control: args.tor_control,
             tor_password: args.tor_password,
+            snn_state_file: args.snn_state_file,
+            proxies_file: args.proxies_file,
+            proxies,
         })
     }
 
@@ -234,6 +258,11 @@ impl AppConfig {
             self.max_delay_ms,
         );
         next.findings_file = self.findings_file_for_profile(profile);
+        next.tor_control = self.tor_control.clone();
+        next.tor_password = self.tor_password.clone();
+        next.snn_state_file = self.snn_state_file.clone();
+        next.proxies_file = self.proxies_file.clone();
+        next.proxies = self.proxies.clone();
         next
     }
 
@@ -464,6 +493,9 @@ mod tests {
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         let paths = cfg.load_wordlist()?;
@@ -513,6 +545,9 @@ mod tests {
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         let paths = cfg.load_wordlist()?;
@@ -556,6 +591,9 @@ mod tests {
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         assert_eq!(cfg.scenario, Some(ScenarioKind::RateLimit));
@@ -594,6 +632,9 @@ mod tests {
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         assert_eq!(
@@ -633,6 +674,9 @@ mod tests {
             tor_proxy: None,
             tor_control: None,
             tor_password: None,
+            snn_state_file: None,
+            proxies_file: None,
+            proxies: vec![],
         };
 
         let profiled = cfg.for_profile(ClientProfile::MobileSafari);

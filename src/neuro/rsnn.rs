@@ -8,6 +8,7 @@ use rand::SeedableRng;
 
 use super::encoder::{analyze_patterns, encode_metric, EncoderConfig, PatternSummary};
 use super::neuron::LifNeuron;
+use super::state::RsnnState;
 use super::synapse::Synapse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,6 +138,26 @@ impl Rsnn {
     #[cfg(test)]
     fn new_seeded(cfg: RsnnConfig, seed: u64) -> Self {
         Self::new_with_rng(cfg, rand::rngs::StdRng::seed_from_u64(seed))
+    }
+
+    pub fn extract_state(&self) -> RsnnState {
+        RsnnState {
+            input_weights: self.input_weights.clone(),
+            recurrent_weights: self.recurrent_weights.clone(),
+            output_throttle_weights: self.output_throttle_weights.clone(),
+            output_recover_weights: self.output_recover_weights.clone(),
+        }
+    }
+
+    pub fn load_state(&mut self, state: RsnnState) {
+        if state.input_weights.len() == self.input_weights.len()
+            && state.input_weights[0].len() == self.input_weights[0].len()
+        {
+            self.input_weights = state.input_weights;
+            self.recurrent_weights = state.recurrent_weights;
+            self.output_throttle_weights = state.output_throttle_weights;
+            self.output_recover_weights = state.output_recover_weights;
+        }
     }
 
     pub fn process_metric(

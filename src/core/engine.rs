@@ -30,6 +30,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         speed_mode: config.speed_mode,
         workers: config.workers,
         tor_proxy: config.tor_proxy.clone(),
+        proxies: config.proxies.clone(),
     });
     let (client_tx, client_rx) = client_factory.channel()?;
     let (client_command_tx, client_command_rx) = mpsc::channel(4);
@@ -342,9 +343,22 @@ fn spawn_neuro_actor(
     let speed_mode = config.speed_mode;
     let min_delay_ms = config.min_delay_ms;
     let max_delay_ms = config.max_delay_ms;
+    let state_file = config.snn_state_file.clone();
 
     tokio::task::spawn_blocking(move || -> Result<NeuroTelemetry> {
         let mut rsnn = Rsnn::new(rsnn_config);
+        
+        if let Some(ref path) = state_file {
+            if path.exists() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    if let Ok(state) = serde_json::from_str(&content) {
+                        rsnn.load_state(state);
+                        println!("[SNN] Loaded memory state from {}", path.display());
+                    }
+                }
+            }
+        }
+
         let mut telemetry = NeuroTelemetry::default();
         let mut simulator = SafeActionSimulator::new(simulation_mode);
         let mut finding_writer = FindingWriter::new(&findings_config)?;
@@ -452,6 +466,17 @@ fn spawn_neuro_actor(
             telemetry.push_simulation_note(line.clone());
         }
         telemetry.final_delay_ms = current_delay;
+        if let Some(ref path) = state_file {
+            let state = rsnn.extract_state();
+            if let Ok(content) = serde_json::to_string(&state) {
+                if let Err(e) = std::fs::write(path, content) {
+                    eprintln!("[SNN WARNING] Failed to save state to {}: {}", path.display(), e);
+                } else {
+                    println!("[SNN] Saved memory state to {}", path.display());
+                }
+            }
+        }
+
         Ok(telemetry)
     })
 }
