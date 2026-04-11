@@ -1327,3 +1327,128 @@ for word in wordlist {
 ```
 
 Для простых задач достаточно **Gobuster** или **ffuf** с параметром `-w` (wordlist) и `-u` (url). Сложные системы эвазии, которые мы разработали выше, нужны исключительно для Red Teaming операций в защищенных средах.
+
+
+В **Red Teaming** «антигравити» (состояние, когда твой трафик не создает «веса» для систем обнаружения) — это святой грааль. Использование SNN делает это возможным, так как в отличие от обычного фаззинга, который «падает» на WAF тяжелым грузом однотипных запросов, твоя сеть адаптирует трафик, делая его «невесомым» для эвристических анализаторов.
+
+Для сборки проекта в единое целое нам нужно реализовать **Orchestrator** — финальную логику, которая соединяет нейросеть, ротатор и воркеры.
+
+
+
+### 1. Финальная сборка: `src/core/engine.rs`
+
+Это «сердце» проекта. Здесь мы соединяем асинхронный I/O и синхронные вычисления SNN.
+
+```rust
+use tokio::sync::{mpsc, watch};
+use std::sync::Arc;
+use crate::neuro::rsnn::{RSNN, EvasionAction};
+use crate::network::rotator::{ClientFactory};
+use crate::network::tor::TorController;
+
+pub struct FuzzOrchestrator {
+    factory: ClientFactory,
+    tor: TorController,
+    wordlist: Vec<String>,
+    target: String,
+}
+
+impl FuzzOrchestrator {
+    pub fn new(target: &str, wordlist: Vec<String>) -> Self {
+        Self {
+            factory: ClientFactory::new(Some("socks5h://127.0.0.1:9050")),
+            tor: TorController::new("127.0.0.1:9051", Some("tor_password")),
+            wordlist,
+            target: target.to_string(),
+        }
+    }
+
+    pub async fn run(self) {
+        // Каналы управления
+        let (metric_tx, mut metric_rx) = mpsc::channel::<(u64, u16)>(1000);
+        let (delay_tx, delay_rx) = watch::channel(100u64);
+        let (client_tx, client_rx) = watch::channel(self.factory.build());
+
+        // 1. Запуск Neuro-Actor (обработка мозгов)
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<EvasionAction>(100);
+        
+        tokio::task::spawn_blocking(move || {
+            let mut snn = RSNN::new(3, 15);
+            while let Some((latency, status)) = metric_rx.blocking_recv() {
+                let inputs = [
+                    if latency > 1000 { 0.9 } else { 0.0 },
+                    if status == 403 || status == 429 { 1.5 } else { 0.0 },
+                    if status == 404 { 0.2 } else { 0.0 }
+                ];
+                let actions = snn.process_step(&inputs);
+                for action in actions {
+                    let _ = cmd_tx.blocking_send(action);
+                }
+            }
+        });
+
+        // 2. Запуск Evasion-Controller (выполнение действий)
+        let factory_clone = self.factory.clone();
+        let tor_clone = self.tor.clone();
+        let d_tx = delay_tx.clone();
+        let c_tx = client_tx.clone();
+
+        tokio::spawn(async move {
+            while let Some(action) = cmd_rx.recv().await {
+                match action {
+                    EvasionAction::Throttle(ms) => { let _ = d_tx.send(ms); },
+                    EvasionAction::RotateUserAgent => {
+                        let _ = c_tx.send(factory_clone.build());
+                    },
+                    EvasionAction::RebuildTorCircuit => {
+                        let _ = d_tx.send(10000); // Пауза на перестройку
+                        let _ = tor_clone.request_new_ip().await;
+                        let _ = c_tx.send(factory_clone.build());
+                        let _ = d_tx.send(100);
+                    }
+                }
+            }
+        });
+
+        // 3. Запуск воркеров
+        let mut workers = vec![];
+        for word in self.wordlist {
+            let url = format!("{}/{}", self.target, word);
+            let m_tx = metric_tx.clone();
+            let mut d_rx = delay_rx.clone();
+            let mut c_rx = client_rx.clone();
+
+            workers.push(tokio::spawn(async move {
+                let d = *d_rx.borrow_and_update();
+                tokio::time::sleep(std::time::Duration::from_millis(d)).await;
+
+                let client = c_rx.borrow().clone();
+                let start = std::time::Instant::now();
+                let res = client.get(&url).send().await;
+                
+                let status = res.map(|r| r.status().as_u16()).unwrap_or(0);
+                let latency = start.elapsed().as_millis() as u64;
+
+                if status == 200 { println!("[FOUND] {}", url); }
+                let _ = m_tx.send((latency, status)).await;
+            }));
+        }
+        futures::future::join_all(workers).await;
+    }
+}
+```
+
+---
+
+### Что это дает для Red Teaming:
+
+* **LIF Neuron Dynamics:** Ваша задержка между запросами — это не число, а затухающий потенциал мембраны нейрона. Если сервер начинает «сопротивляться» (latency up), нейроны возбуждаются, и задержка растет экспоненциально, а затем плавно падает. Это идеально мимикрирует под человеческий серфинг.
+* **Circuit-Level Evasion:** При фиксации 429 ошибки система не просто ждет, она убивает текущий TCP-стек и пересоздает его через новый узел Tor с новым отпечатком браузера.
+
+### Как запустить проект:
+
+1.  Убедитесь, что **Tor** запущен с `ControlPort 9051`.
+2.  Соберите все модули в дерево, которое мы обсуждали ранее.
+3.  В `main.rs` создайте экземпляр `FuzzOrchestrator` и вызовите `.run().await`.
+
+На каком типе защиты (WAF) планируется тестирование проекта? Это поможет откалибровать пороги срабатывания (Thresholds) нейронов.
