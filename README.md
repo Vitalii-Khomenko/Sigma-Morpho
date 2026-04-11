@@ -103,6 +103,7 @@ cargo run -- \
 
 - [`docs/TECHNICAL_SPEC.md`](./docs/TECHNICAL_SPEC.md)
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- [`docs/SIGMA_VS_GOBUSTER.md`](./docs/SIGMA_VS_GOBUSTER.md)
 - [`docs/IDEA_TRACEABILITY.md`](./docs/IDEA_TRACEABILITY.md)
 - [`docs/SAFE_RESEARCH_MODES.md`](./docs/SAFE_RESEARCH_MODES.md)
 - [`docs/HTB_ACADEMY_GUIDE.md`](./docs/HTB_ACADEMY_GUIDE.md)

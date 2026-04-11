@@ -880,3 +880,399 @@ async fn main() {
 1. **Lock-Free Архитектура:** Нет `Mutex` или `RwLock` на объекте `RSNN`. Вычисления идут без блокировок памяти.
 2. **Backpressure:** Канал `mpsc` имеет лимит (1000). Если нейросеть не успевает обсчитывать спайки (что вряд ли на Rust, но возможно при миллионах запросов), воркеры притормозят, предотвращая Out-Of-Memory (OOM).
 3. **Разделение I/O и CPU:** Асинхронные HTTP запросы живут в легких тасках `tokio`, а тяжелая математика спайков (STDP, интеграция токов) вынесена в блокирующий тред (`spawn_blocking`).
+
+
+
+----------------------------
+
+Для реализации «горячей» замены `reqwest::Client` (Rotation) в высоконагруженной асинхронной среде требуется решить проблему разделения состояний. Экземпляр `reqwest::Client` внутри использует пулы соединений (connection pools) и внутренний `Arc`. Создавать новый клиент на *каждый* запрос крайне ресурсоемко.
+
+Правильный паттерн: держать один активный `Client`, который шарится между тысячами воркеров. При срабатывании триггера `RotateUserAgent` от нейросети, контроллер собирает **новый** `Client` с новым User-Agent и безопасно подменяет (hot-swap) глобальный экземпляр без остановки потоков.
+
+Для этого идеально подходит `tokio::sync::watch`, так как копирование `reqwest::Client` — это дешевая операция (копируются только внутренние указатели `Arc`).
+
+### 1. Модуль ротатора (`src/network/rotator.rs`)
+
+Этот модуль хранит базу конфигураций и умеет генерировать новые клиенты по требованию.
+
+```rust
+use reqwest::{Client, Proxy};
+use rand::seq::SliceRandom;
+use std::time::Duration;
+
+// База реальных User-Agents (в проде загружается из файла)
+const USER_AGENTS: &[&str] = &[
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/114.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/114.0.5735.99 Mobile/15E148 Safari/604.1",
+];
+
+pub struct ClientRotator {
+    tor_proxy: Option<String>,
+}
+
+impl ClientRotator {
+    pub fn new(tor_proxy: Option<&str>) -> Self {
+        Self {
+            tor_proxy: tor_proxy.map(|s| s.to_string()),
+        }
+    }
+
+    // Собирает новый HTTP-клиент со случайным User-Agent
+    pub fn build_new_client(&self) -> Client {
+        let mut rng = rand::thread_rng();
+        let selected_ua = USER_AGENTS.choose(&mut rng).unwrap();
+
+        let mut builder = Client::builder()
+            .user_agent(*selected_ua)
+            .timeout(Duration::from_secs(7))
+            .pool_idle_timeout(Duration::from_secs(15))
+            .danger_accept_invalid_certs(true); // Часто нужно при фаззинге
+
+        if let Some(proxy_url) = &self.tor_proxy {
+            if let Ok(proxy) = Proxy::all(proxy_url) {
+                builder = builder.proxy(proxy);
+            }
+        }
+
+        builder.build().expect("Failed to build reqwest::Client")
+    }
+}
+```
+
+### 2. Интеграция "Hot-Swap" в движок (`src/core/engine.rs` или `main.rs`)
+
+Добавляем канал для трансляции нового HTTP-клиента воркерам и связываем его с сигналами SNN.
+
+```rust
+use tokio::sync::{mpsc, watch};
+use std::time::Duration;
+use reqwest::Client;
+// Предполагается, что модули rsnn и rotator подключены
+use crate::network::rotator::ClientRotator;
+use crate::neuro::rsnn::{RSNN, EvasionAction};
+
+pub struct WorkerState {
+    pub target_url: String,
+    pub wordlist: Vec<String>,
+}
+
+pub async fn run_fuzzer(state: WorkerState) {
+    let rotator = ClientRotator::new(Some("socks5h://127.0.0.1:9050"));
+    
+    // Инициализация стартового клиента
+    let initial_client = rotator.build_new_client();
+
+    // Канал задержки (от SNN к воркерам)
+    let (delay_tx, delay_rx) = watch::channel(50u64);
+    
+    // Канал АКТИВНОГО КЛИЕНТА (от контроллера к воркерам)
+    let (client_tx, client_rx) = watch::channel(initial_client);
+    
+    // Канал метрик (от воркеров к SNN)
+    let (metric_tx, mut metric_rx) = mpsc::channel::<(u64, u16)>(5000);
+
+    // Нейро-ядро (Actor) в отдельном потоке
+    tokio::task::spawn_blocking(move || {
+        let mut snn = RSNN::new(3, 20);
+        let mut current_delay = 50;
+
+        while let Some((latency, status)) = metric_rx.blocking_recv() {
+            // Конвертация в токи...
+            let inputs = [
+                if latency > 800 { 0.8 } else { 0.0 },
+                if status == 403 || status == 429 { 1.5 } else { 0.0 },
+                if status == 404 { 0.3 } else { 0.0 }
+            ];
+
+            let actions = snn.process_step(&inputs);
+            let mut delay_changed = false;
+
+            for action in actions {
+                match action {
+                    EvasionAction::Throttle(ms) => {
+                        current_delay = ms;
+                        delay_changed = true;
+                    }
+                    EvasionAction::RotateUserAgent => {
+                        // SNN приняла решение сменить отпечаток
+                        println!("[SNN ACTION] 403 Threshold met. Rotating User-Agent.");
+                        let new_client = rotator.build_new_client();
+                        // Отправляем новый клиент всем воркерам (старый будет удален GC)
+                        let _ = client_tx.send(new_client);
+                        
+                        current_delay = 1500; // Даем паузу после смены
+                        delay_changed = true;
+                    }
+                    EvasionAction::RebuildTorCircuit => {
+                        // Логика отправки NEWNYM в Control Port
+                        println!("[SNN ACTION] CRITICAL. Rebuilding Tor circuit.");
+                        // ... Вызов tcp-клиента для порта 9051 ...
+                    }
+                }
+            }
+
+            // Плавное восстановление скорости
+            if !delay_changed && current_delay > 50 {
+                current_delay = current_delay.saturating_sub(5);
+                let _ = delay_tx.send(current_delay);
+            } else if delay_changed {
+                let _ = delay_tx.send(current_delay);
+            }
+        }
+    });
+
+    // Запуск пула асинхронных воркеров
+    let mut tasks = vec![];
+
+    for word in state.wordlist {
+        let url = format!("{}/{}", state.target_url, word);
+        let metric_tx = metric_tx.clone();
+        let mut delay_rx = delay_rx.clone();
+        let mut client_rx = client_rx.clone(); // Подписка на обновления клиента
+
+        let task = tokio::spawn(async move {
+            // 1. Получаем АКТУАЛЬНУЮ задержку
+            let delay = *delay_rx.borrow_and_update();
+            if delay > 0 {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
+
+            // 2. Получаем АКТУАЛЬНЫЙ клиент (O(1) операция, клонируется Arc)
+            let active_client = client_rx.borrow().clone();
+
+            // 3. Выполнение запроса
+            let start = tokio::time::Instant::now();
+            let response = active_client.get(&url).send().await;
+            let latency = start.elapsed().as_millis() as u64;
+
+            let status = match response {
+                Ok(r) => {
+                    let s = r.status().as_u16();
+                    if s == 200 || s == 301 {
+                        println!("[+] {} - {}", s, url);
+                    }
+                    s
+                },
+                Err(_) => 000, // Timeout или обрыв
+            };
+
+            // 4. Отправка метрик в SNN
+            let _ = metric_tx.send((latency, status)).await;
+        });
+
+        tasks.push(task);
+    }
+
+    futures::future::join_all(tasks).await;
+}
+```
+
+### Особенности реализации
+* **Отсутствие гонок (Race Conditions):** `watch::channel` гарантирует, что каждый воркер всегда видит самую последнюю валидную версию `Client`.
+* **Zero Downtime:** Воркеры не блокируются на время сборки нового клиента нейро-ядром. Старые запросы дорабатывают с предыдущим клиентом, новые автоматически используют обновленный.
+* **Сброс пула TCP:** Поскольку создается совершенно новый инстанс `reqwest::Client`, старые keep-alive TCP соединения (по которым WAF мог нас трекать) сбрасываются.
+
+
+Для реализации полноценного взаимодействия с сетью Tor (смена IP-адреса) и ротации прокси нам потребуется работа с сырыми TCP-сокетами для общения с **Tor Control Port**. 
+
+Поскольку взаимодействие с Tor (отправка команд и ожидание перестройки цепочки узлов) — это асинхронная I/O операция, мы не можем выполнять ее внутри синхронного `spawn_blocking` ядра нейросети. Поэтому мы выделим ротатор в отдельный асинхронный **Actor (Evasion Controller)**.
+
+### 1. Модуль интеграции с Tor (`src/network/tor.rs`)
+
+Этот модуль подключается к Tor Control Port (по умолчанию 9051), проходит аутентификацию и отправляет сигнал `NEWNYM` (New Nym/Identity), заставляя Tor сбросить кэш соединений и построить новый маршрут (сменить выходную ноду/IP).
+
+```rust
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use std::time::Duration;
+
+pub struct TorController {
+    control_address: String,
+    password: Option<String>,
+}
+
+impl TorController {
+    pub fn new(control_address: &str, password: Option<&str>) -> Self {
+        Self {
+            control_address: control_address.to_string(),
+            password: password.map(|s| s.to_string()),
+        }
+    }
+
+    /// Отправляет сигнал NEWNYM для смены IP-адреса
+    pub async fn request_new_ip(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut stream = tokio::time::timeout(
+            Duration::from_secs(5),
+            TcpStream::connect(&self.control_address)
+        ).await??;
+
+        // 1. Аутентификация
+        let auth_cmd = match &self.password {
+            Some(pwd) => format!("AUTHENTICATE \"{}\"\r\n", pwd),
+            None => "AUTHENTICATE \"\"\r\n".to_string(),
+        };
+        
+        stream.write_all(auth_cmd.as_bytes()).await?;
+        self.read_and_check(&mut stream, "250").await?;
+
+        // 2. Отправка сигнала смены цепочки
+        stream.write_all(b"SIGNAL NEWNYM\r\n").await?;
+        self.read_and_check(&mut stream, "250").await?;
+
+        Ok(())
+    }
+
+    /// Вспомогательная функция для чтения ответа от Control Port
+    async fn read_and_check(&self, stream: &mut TcpStream, expected_code: &str) -> Result<(), String> {
+        let mut buffer = [0; 128];
+        let n = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
+        let response = String::from_utf8_lossy(&buffer[..n]);
+        
+        if response.starts_with(expected_code) {
+            Ok(())
+        } else {
+            Err(format!("Tor Error: Expected {}, got: {}", expected_code, response))
+        }
+    }
+}
+```
+
+### 2. Расширенный Rotator Client (`src/network/rotator.rs`)
+
+Здесь мы создаем фабрику клиентов. **Критически важный момент:** мы используем схему `socks5h://` вместо `socks5://`. Буква `h` (hostname) означает, что разрешение DNS-имен (DNS Resolution) будет происходить *на стороне выходной ноды Tor*. Если использовать обычный SOCKS5, ваши DNS-запросы "утекут" (DNS Leak) мимо Tor.
+
+```rust
+use reqwest::{Client, Proxy};
+use rand::seq::SliceRandom;
+use std::time::Duration;
+
+const USER_AGENTS: &[&str] = &[
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15...",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/114.0",
+];
+
+pub struct ClientFactory {
+    proxy_url: Option<String>,
+}
+
+impl ClientFactory {
+    // В proxy_url нужно передавать "socks5h://127.0.0.1:9050"
+    pub fn new(proxy_url: Option<&str>) -> Self {
+        Self { proxy_url: proxy_url.map(|s| s.to_string()) }
+    }
+
+    pub fn build(&self) -> Client {
+        let mut rng = rand::thread_rng();
+        let ua = USER_AGENTS.choose(&mut rng).unwrap();
+
+        let mut builder = Client::builder()
+            .user_agent(*ua)
+            .timeout(Duration::from_secs(10))
+            // Важно: отключаем keep-alive при агрессивном фаззинге через Tor, 
+            // чтобы WAF не трекал нас по долгоживущим TCP сессиям
+            .pool_max_idle_per_host(0); 
+
+        if let Some(proxy_str) = &self.proxy_url {
+            let proxy = Proxy::all(proxy_str).expect("Invalid Proxy URL");
+            builder = builder.proxy(proxy);
+        }
+
+        builder.build().expect("Failed to construct reqwest Client")
+    }
+}
+```
+
+### 3. Интеграция: Асинхронный Контроллер Эвазии (`src/core/engine.rs`)
+
+Теперь мы связываем синхронную SNN с асинхронным контроллером Tor. Нейросеть генерирует команды (`EvasionCommand`), а асинхронный таск их выполняет.
+
+```rust
+use tokio::sync::{mpsc, watch};
+use crate::network::tor::TorController;
+use crate::network::rotator::ClientFactory;
+
+pub enum EvasionCommand {
+    RotateUserAgent,
+    RebuildTorCircuit,
+}
+
+// Запускается как отдельный tokio::spawn
+pub async fn run_evasion_controller(
+    mut command_rx: mpsc::Receiver<EvasionCommand>,
+    client_tx: watch::Sender<reqwest::Client>,
+    delay_tx: watch::Sender<u64>,
+) {
+    let factory = ClientFactory::new(Some("socks5h://127.0.0.1:9050"));
+    let tor = TorController::new("127.0.0.1:9051", Some("my_tor_password"));
+
+    while let Some(command) = command_rx.recv().await {
+        match command {
+            EvasionCommand::RotateUserAgent => {
+                println!("[CONTROLLER] Generating new Client with rotated UA...");
+                let new_client = factory.build();
+                let _ = client_tx.send(new_client);
+            }
+            EvasionCommand::RebuildTorCircuit => {
+                println!("[CONTROLLER] >>> INITIATING TOR CIRCUIT REBUILD <<<");
+                
+                // 1. Ставим воркеры на паузу (увеличиваем задержку)
+                let _ = delay_tx.send(10_000); 
+
+                // 2. Запрашиваем новый IP у Tor
+                match tor.request_new_ip().await {
+                    Ok(_) => {
+                        println!("[CONTROLLER] Tor NEWNYM signal accepted.");
+                        // Tor'у требуется время на перестройку маршрута
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        
+                        // 3. Выпускаем новый HTTP клиент (старые TCP сокеты будут уничтожены)
+                        let new_client = factory.build();
+                        let _ = client_tx.send(new_client);
+                        
+                        // 4. Снимаем с паузы
+                        println!("[CONTROLLER] Tor Circuit rebuilt. Resuming attack.");
+                        let _ = delay_tx.send(50);
+                    }
+                    Err(e) => {
+                        eprintln!("[CONTROLLER] Tor rotation failed: {}. Retrying in 10s.", e);
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+### 4. Изменения в Нейро-ядре
+
+В `spawn_blocking` (где крутится RSNN) мы теперь отправляем команды в этот новый контроллер:
+
+```rust
+// Внутри нейро-ядра (Actor)
+// ...
+EvasionAction::RotateUserAgent => {
+    // Не блокируя поток, отсылаем сигнал асинхронному контроллеру
+    let _ = command_tx.blocking_send(EvasionCommand::RotateUserAgent);
+}
+EvasionAction::RebuildTorCircuit => {
+    let _ = command_tx.blocking_send(EvasionCommand::RebuildTorCircuit);
+}
+// ...
+```
+
+### Настройка среды (Environment Setup)
+
+Для работы этого кода на локальной машине должен быть настроен Tor:
+
+1. Откройте `torrc` (конфигурацию Tor).
+2. Раскомментируйте или добавьте строки:
+   ```text
+   ControlPort 9051
+   HashedControlPassword 16:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # Сгенерируйте через `tor --hash-password my_tor_password`
+   ```
+3. Перезапустите службу Tor.
+
+Теперь архитектура полностью "развязана": SNN быстро перемалывает числа на CPU, асинхронный контроллер медленно общается с Tor по TCP, а тысячи легких воркеров бесперебойно брутфорсят пути, мгновенно подхватывая новые клиенты без `Mutex`-блокировок.

@@ -1,0 +1,12 @@
+# Sigma Morpho findings
+# statuses=200,204,301,302,307,308,401,403,405,500
+# min_body_bytes=0
+# max_body_bytes=none
+# soft_404_filter=true
+# soft_404_baseline status=404 bytes=275 fingerprint=13195598013690268970
+status=301 bytes=315 latency_ms=177 fingerprint=7428944761618312447 path=/themes
+status=403 bytes=278 latency_ms=255 fingerprint=89997852923482276 path=/server-status
+status=301 bytes=311 latency_ms=256 fingerprint=16971695130628252418 path=/js
+status=301 bytes=316 latency_ms=258 fingerprint=12304953402940281312 path=/cdn-cgi
+status=301 bytes=315 latency_ms=258 fingerprint=3197365053472770697 path=/images
+status=301 bytes=314 latency_ms=269 fingerprint=17815368567360643215 path=/fonts
