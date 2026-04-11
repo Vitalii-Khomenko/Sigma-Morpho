@@ -64,9 +64,9 @@ There are always routes for further stealth:
 2. **Distributed Nodes**: Controlling multiple Tor instances (or bot proxies) simultaneously instead of just rebuilding one Circuit.
 3. **STDP Memory Persistence**: Currently, synaptic weights are localized to the program timeline. Saving the Synaptic state to physical storage for repeated runs on similar CDNs.
 
-## Automatic Run Wrapper
+## Interactive Run Wrapper
 
-If you want every run to archive itself automatically under `runs/` without interactive prompts, use the shell wrapper:
+If you want every run to archive itself automatically under `runs/` and configure launch options through an interactive wizard, use the shell wrapper:
 
 ```bash
 chmod +x scripts/run_sigma_session.sh
@@ -74,11 +74,13 @@ chmod +x scripts/run_sigma_session.sh
 ```
 
 What the wrapper does automatically:
-- Starts immediately with default settings and optional environment overrides.
+- Walks through target, wordlist, workers, timing, findings filters, speed mode, client profile, and advanced options.
+- Shows short inline hints for every prompt.
+- Uses colored headings, hints, warnings, and status messages on ANSI-capable terminals.
 - Creates a fresh run directory in `runs/` using the current date, time, target IP or host, and target port.
 - Saves `command.txt`, `rerun.sh`, `metadata.txt`, build logs, runtime stdout/stderr, timing, and `findings.txt`.
 
-Default behavior:
+Wizard defaults:
 - Base URL: `http://127.0.0.1:8080`
 - Wordlist: `wordlist.txt`
 - Build profile: `release`
@@ -91,7 +93,7 @@ Typical local smoke-test flow:
 ./scripts/run_sigma_session.sh
 ```
 
-If you need different parameters without editing the script, set environment variables before запуском, for example:
+If you want the wizard to start with different defaults, set environment variables before launch, for example:
 
 ```bash
 SIGMA_BASE_URL=http://127.0.0.1:8080 \
@@ -100,7 +102,7 @@ SIGMA_WORKERS=8 \
 ./scripts/run_sigma_session.sh
 ```
 
-Relative file paths in these environment variables are resolved from the repository root.
+Relative file paths in these environment variables are resolved from the repository root. The wizard still asks interactively; the environment only pre-fills the defaults.
 
 The exact resolved Sigma Morpho command for each run is written to the generated `command.txt`, and a ready-to-run copy is saved as `rerun.sh` inside the same run directory.
 
