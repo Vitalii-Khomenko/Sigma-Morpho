@@ -12,7 +12,7 @@ Automatic Sigma Morpho runner.
 What it does:
 - starts without interactive prompts
 - always creates a fresh run directory inside runs/
-- names the directory using date, time, and target port
+- names the directory using date, time, target host or IP, and target port
 - always saves command.txt, rerun.sh, metadata.txt, build logs, stdout, stderr, timing, and findings.txt
 
 Usage:
@@ -58,20 +58,26 @@ cd "$REPO_ROOT"
 
 canonical_path() {
     local input_path=$1
-    local dir_part file_part
+    local candidate_path dir_part file_part
 
-    if [[ -d "$input_path" ]]; then
+    if [[ "$input_path" == /* ]]; then
+        candidate_path=$input_path
+    else
+        candidate_path="$REPO_ROOT/$input_path"
+    fi
+
+    if [[ -d "$candidate_path" ]]; then
         (
-            cd -- "$input_path"
+            cd -- "$candidate_path" || exit 1
             pwd -P
         )
         return
     fi
 
-    dir_part=$(dirname -- "$input_path")
-    file_part=$(basename -- "$input_path")
+    dir_part=$(dirname -- "$candidate_path")
+    file_part=$(basename -- "$candidate_path")
     (
-        cd -- "$dir_part"
+        cd -- "$dir_part" || exit 1
         printf '%s/%s\n' "$(pwd -P)" "$file_part"
     )
 }
@@ -252,7 +258,10 @@ if [[ -z "$port" ]]; then
     exit 1
 fi
 
-wordlist_abs=$(canonical_path "$wordlist_path")
+if ! wordlist_abs=$(canonical_path "$wordlist_path"); then
+    echo "Failed to resolve wordlist path: $wordlist_path" >&2
+    exit 1
+fi
 
 if [[ ! -e "$wordlist_abs" ]]; then
     echo "Wordlist path does not exist: $wordlist_abs" >&2
@@ -260,7 +269,10 @@ if [[ ! -e "$wordlist_abs" ]]; then
 fi
 
 if [[ -n "$snn_state_file" ]]; then
-    snn_state_file=$(canonical_path "$snn_state_file")
+    if ! snn_state_file=$(canonical_path "$snn_state_file"); then
+        echo "Failed to resolve SNN state file path: $snn_state_file" >&2
+        exit 1
+    fi
     if [[ ! -e "$snn_state_file" ]]; then
         echo "SNN state file does not exist: $snn_state_file" >&2
         exit 1
@@ -268,7 +280,10 @@ if [[ -n "$snn_state_file" ]]; then
 fi
 
 if [[ -n "$proxies_file" ]]; then
-    proxies_file=$(canonical_path "$proxies_file")
+    if ! proxies_file=$(canonical_path "$proxies_file"); then
+        echo "Failed to resolve proxies file path: $proxies_file" >&2
+        exit 1
+    fi
     if [[ ! -e "$proxies_file" ]]; then
         echo "Proxies file does not exist: $proxies_file" >&2
         exit 1
@@ -276,8 +291,9 @@ if [[ -n "$proxies_file" ]]; then
 fi
 
 timestamp=$(date +%F_%H-%M-%S)
+host_slug=$(sanitize_segment "$host")
 port_slug=$(sanitize_segment "$port")
-run_dir_rel=$(next_run_dir "runs/${timestamp}_${port_slug}")
+run_dir_rel=$(next_run_dir "runs/${timestamp}_${host_slug}_${port_slug}")
 run_dir_abs="$REPO_ROOT/$run_dir_rel"
 mkdir -p "$run_dir_abs"
 

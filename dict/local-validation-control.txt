@@ -1,0 +1,10 @@
+api
+public
+admin
+hidden
+missing
+api-docs
+public-status
+admin-panel
+hidden-dir
+missing-two

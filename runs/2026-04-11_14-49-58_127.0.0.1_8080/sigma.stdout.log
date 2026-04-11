@@ -1,0 +1,59 @@
+[*] Sigma Morpho started
+[*] Target: http://127.0.0.1:8080/
+[*] Client profile: research-default
+[*] Workload: 10 seed paths x 1 rounds, workers: 1, recursion depth: 0
+[*] Soft-404 baseline: status=404 bytes=9 fingerprint=4416902682472380750
+[FINDING] status=200 bytes=16 latency=0ms path=/api
+[FINDING] status=200 bytes=16 latency=0ms path=/public
+[FINDING] status=403 bytes=9 latency=0ms path=/admin
+[FINDING] status=403 bytes=9 latency=0ms path=/hidden
+[FINDING] status=200 bytes=16 latency=0ms path=/api-docs
+[FINDING] status=200 bytes=16 latency=0ms path=/public-status
+[FINDING] status=403 bytes=9 latency=0ms path=/admin-panel
+[FINDING] status=403 bytes=9 latency=0ms path=/hidden-dir
+[PROGRESS] processed=10/10 (100.00%) delay=300ms profile=defensive
+
+===== Sigma Morpho Summary =====
+Elapsed: 3.03s
+Client profile: research-default
+Speed mode: balanced
+Simulation mode: false
+Findings file: /home/warmond/AI-Research/Sigma-Morpho/runs/2026-04-11_14-49-58_127.0.0.1_8080/findings.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 10
+Discovered jobs: 10
+2xx: 4
+3xx: 0
+4xx: 6
+404s: 2
+Protective block signals (403/429/503): 4
+5xx: 0
+Transport errors: 0
+Avg latency: 0.10 ms
+Min latency: 0 ms
+Max latency: 1 ms
+Total body bytes: 118
+Final adaptive delay: 300 ms
+Final adaptive profile: defensive
+Neuro decisions: 10
+Throttle increases: 0
+Throttle decreases: 0
+Cautious entries: 1
+Defensive entries: 1
+Baseline recoveries: 0
+Latency burst events: 0
+Block burst events: 2
+404 burst events: 0
+Logged findings: 8
+Suppressed soft-404 matches: 0
+Client rebuilds: 0
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+200 hits:
+  - /api
+  - /public
+  - /api-docs
+  - /public-status
+

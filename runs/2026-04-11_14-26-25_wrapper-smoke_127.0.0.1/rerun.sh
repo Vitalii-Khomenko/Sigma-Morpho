@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd /home/warmond/AI-Research/Sigma-Morpho
-/home/warmond/AI-Research/Sigma-Morpho/target/release/sigma_morpho --base-url http://127.0.0.1:8080 --wordlist /home/warmond/AI-Research/Sigma-Morpho/runs/2026-04-11_14-13-41_local-python-server/wordlist.txt --workers 8 --rounds 1 --recursion-depth 0 --timeout-ms 5000 --initial-delay-ms 0 --min-delay-ms 0 --max-delay-ms 250 --latency-threshold-ms 150 --findings-file /home/warmond/AI-Research/Sigma-Morpho/runs/2026-04-11_14-26-25_wrapper-smoke_127.0.0.1/findings.txt --interesting-statuses 200\,403\,429 --min-body-bytes 0 --speed-mode balanced --client-profile research-default

@@ -1,6 +1,0 @@
-# Sigma Morpho findings
-# statuses=200,204,301,302,307,308,401,403,405,500
-# min_body_bytes=0
-# max_body_bytes=none
-# soft_404_filter=true
-# soft_404_baseline status=404 bytes=275 fingerprint=13195598013690268970

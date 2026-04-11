@@ -75,14 +75,14 @@ chmod +x scripts/run_sigma_session.sh
 
 What the wrapper does automatically:
 - Starts immediately with default settings and optional environment overrides.
-- Creates a fresh run directory in `runs/` using the current date, time, and target port.
+- Creates a fresh run directory in `runs/` using the current date, time, target IP or host, and target port.
 - Saves `command.txt`, `rerun.sh`, `metadata.txt`, build logs, runtime stdout/stderr, timing, and `findings.txt`.
 
 Default behavior:
 - Base URL: `http://127.0.0.1:8080`
 - Wordlist: `wordlist.txt`
 - Build profile: `release`
-- Logs: always under `runs/YYYY-MM-DD_HH-MM-SS_PORT/`
+- Logs: always under `runs/YYYY-MM-DD_HH-MM-SS_IP_PORT/`
 
 Typical local smoke-test flow:
 
@@ -99,6 +99,8 @@ SIGMA_WORDLIST=dict/api-endpoints.txt \
 SIGMA_WORKERS=8 \
 ./scripts/run_sigma_session.sh
 ```
+
+Relative file paths in these environment variables are resolved from the repository root.
 
 The exact resolved Sigma Morpho command for each run is written to the generated `command.txt`, and a ready-to-run copy is saved as `rerun.sh` inside the same run directory.
 
