@@ -43,7 +43,8 @@ Usage:
 
 Optional environment defaults:
   SIGMA_BASE_URL=http://127.0.0.1:8080
-  SIGMA_WORDLIST=wordlist.txt
+  SIGMA_DICT_DIR=dict
+  SIGMA_WORDLIST=
   SIGMA_WORKERS=16
   SIGMA_ROUNDS=1
   SIGMA_RECURSION_DEPTH=0
@@ -550,6 +551,104 @@ prompt_existing_path() {
     done
 }
 
+prompt_wordlist_choice() {
+    local __resultvar=$1
+    local dict_dir=$2
+    local default_value=$3
+    local dict_abs default_abs custom_default raw_value selected_index custom_index index
+    local file rel_name line_count display_default
+    local -a wordlist_files=()
+
+    if ! dict_abs=$(canonical_path "$dict_dir"); then
+        say_warn "Could not resolve dictionary directory: $dict_dir"
+        prompt_existing_path "$__resultvar" "Wordlist path" "File or directory. Relative paths are resolved from the repository root." "$default_value" no
+        return
+    fi
+
+    if [[ ! -d "$dict_abs" ]]; then
+        say_warn "Dictionary directory does not exist: $dict_abs"
+        prompt_existing_path "$__resultvar" "Wordlist path" "File or directory. Relative paths are resolved from the repository root." "$default_value" no
+        return
+    fi
+
+    while IFS= read -r -d '' file; do
+        wordlist_files+=("$file")
+    done < <(find "$dict_abs" -maxdepth 1 -type f -print0 | sort -z)
+
+    if [[ ${#wordlist_files[@]} -eq 0 ]]; then
+        say_warn "No wordlist files found in: $dict_abs"
+        prompt_existing_path "$__resultvar" "Wordlist path" "File or directory. Relative paths are resolved from the repository root." "$default_value" no
+        return
+    fi
+
+    default_abs=""
+    if [[ -n "$default_value" ]]; then
+        default_abs=$(canonical_path "$default_value" 2>/dev/null || true)
+    fi
+
+    selected_index=1
+    custom_default=${default_value:-}
+    for index in "${!wordlist_files[@]}"; do
+        if [[ -n "$default_abs" && "${wordlist_files[$index]}" == "$default_abs" ]]; then
+            selected_index=$((index + 1))
+            custom_default=""
+            break
+        fi
+    done
+    custom_index=$((${#wordlist_files[@]} + 1))
+    display_default=$selected_index
+    if [[ -n "$custom_default" ]]; then
+        display_default=$custom_index
+    fi
+
+    while true; do
+        printf '\n%s%s%s\n' "${BOLD}${MAGENTA}" "Wordlist" "$RESET"
+        printf '%s%s%s\n' "$DIM" "Choose a wordlist discovered in $dict_abs, or choose custom path." "$RESET"
+
+        for index in "${!wordlist_files[@]}"; do
+            file=${wordlist_files[$index]}
+            rel_name=${file#"$REPO_ROOT/"}
+            line_count=$(wc -l < "$file" 2>/dev/null | tr -d '[:space:]')
+            if [[ -z "$line_count" ]]; then
+                line_count="?"
+            fi
+
+            if (( index + 1 == selected_index )) && [[ -z "$custom_default" ]]; then
+                printf '  %s%d)%s %s %s(%s lines, default)%s\n' "$CYAN" "$((index + 1))" "$RESET" "$rel_name" "$DIM" "$line_count" "$RESET"
+            else
+                printf '  %s%d)%s %s %s(%s lines)%s\n' "$CYAN" "$((index + 1))" "$RESET" "$rel_name" "$DIM" "$line_count" "$RESET"
+            fi
+        done
+
+        if [[ -n "$custom_default" ]]; then
+            printf '  %s%d)%s custom path %s(default: %s)%s\n' "$CYAN" "$custom_index" "$RESET" "$DIM" "$custom_default" "$RESET"
+        else
+            printf '  %s%d)%s custom path\n' "$CYAN" "$custom_index" "$RESET"
+        fi
+
+        printf '%s[%s]%s ' "$CYAN" "$display_default" "$RESET"
+        read_value raw_value
+        raw_value=${raw_value:-$display_default}
+
+        if [[ ! "$raw_value" =~ ^[0-9]+$ ]]; then
+            say_warn "Choose a number from the list."
+            continue
+        fi
+
+        if (( raw_value >= 1 && raw_value <= ${#wordlist_files[@]} )); then
+            printf -v "$__resultvar" '%s' "${wordlist_files[$((raw_value - 1))]}"
+            return
+        fi
+
+        if (( raw_value == custom_index )); then
+            prompt_existing_path "$__resultvar" "Custom wordlist path" "File or directory. Relative paths are resolved from the repository root." "$custom_default" no
+            return
+        fi
+
+        say_warn "Choose a number between 1 and $custom_index."
+    done
+}
+
 if ! command -v cargo >/dev/null 2>&1; then
     say_error "cargo is required but was not found in PATH."
     exit 1
@@ -558,7 +657,8 @@ fi
 show_banner
 
 base_url_default=${SIGMA_BASE_URL:-http://127.0.0.1:8080}
-wordlist_path_default=${SIGMA_WORDLIST:-wordlist.txt}
+dict_dir_default=${SIGMA_DICT_DIR:-dict}
+wordlist_path_default=${SIGMA_WORDLIST:-}
 workers_default=${SIGMA_WORKERS:-16}
 rounds_default=${SIGMA_ROUNDS:-1}
 recursion_depth_default=${SIGMA_RECURSION_DEPTH:-0}
@@ -566,6 +666,9 @@ scan_mode_default=${SIGMA_SCAN_MODE:-path}
 subdomain_search_default=$(as_yes_no "${SIGMA_SUBDOMAIN_SEARCH:-no}")
 if [[ "$subdomain_search_default" == "yes" ]]; then
     scan_mode_default=vhost
+fi
+if [[ -z "$wordlist_path_default" && "$scan_mode_default" == "vhost" && -f "$REPO_ROOT/$dict_dir_default/bitquark-subdomains-top100000.txt" ]]; then
+    wordlist_path_default="$dict_dir_default/bitquark-subdomains-top100000.txt"
 fi
 vhost_template_default=${SIGMA_VHOST_TEMPLATE:-}
 rate_default=${SIGMA_RATE:-}
@@ -607,7 +710,7 @@ if ! is_local_host "$host"; then
     fi
 fi
 
-prompt_existing_path wordlist_abs "Wordlist path" "File or directory. Relative paths are resolved from the repository root." "$wordlist_path_default" no
+prompt_wordlist_choice wordlist_abs "$dict_dir_default" "$wordlist_path_default"
 
 prompt_choice build_profile "Build profile" "release is the normal choice. debug is faster to rebuild but slower to run." "$build_profile_default" release debug
 
@@ -634,6 +737,14 @@ if [[ "$scan_mode" == "vhost" ]]; then
     say_info "Recursion depth is fixed to 0 for vhost/subdomain scans."
 else
     prompt_uint recursion_depth "Recursion depth" "0 disables recursion. Use higher values only when you want directory expansion." "$recursion_depth_default" 0 255
+    if (( recursion_depth > 0 )); then
+        say_warn "Recursion is not ffuf-style single-pass scanning. Every discovered directory can add the whole wordlist again."
+        prompt_yes_no confirm_recursion "Confirm recursive expansion" "Choose no for the same behavior as ffuf -u http://target/FUZZ." no
+        if [[ "$confirm_recursion" != "yes" ]]; then
+            recursion_depth=0
+            say_info "Recursion depth reset to 0 for ffuf-style path fuzzing."
+        fi
+    fi
 fi
 
 say_header "3. Timing"
@@ -869,13 +980,17 @@ fi
 
 say_info "Executing Sigma Morpho. Stdout, stderr, timing, and findings will be archived automatically."
 
-TIMEFORMAT=$'real=%3R\nuser=%3U\nsys=%3S'
 set +e
-{
-    time "${CMD[@]}" \
+if [[ -x /usr/bin/time ]]; then
+    /usr/bin/time -p -o "$run_dir_abs/time.txt" "${CMD[@]}" \
         > >(tee "$run_dir_abs/sigma.stdout.log") \
         2> >(tee "$run_dir_abs/sigma.stderr.log" >&2)
-} 2> "$run_dir_abs/time.txt"
+else
+    TIMEFORMAT=$'real=%3R\nuser=%3U\nsys=%3S'
+    { time "${CMD[@]}" > "$run_dir_abs/sigma.stdout.log" 2> "$run_dir_abs/sigma.stderr.log"; } 2> "$run_dir_abs/time.txt"
+    cat "$run_dir_abs/sigma.stdout.log"
+    cat "$run_dir_abs/sigma.stderr.log" >&2
+fi
 run_exit_code=$?
 set -e
 
