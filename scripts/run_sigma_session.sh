@@ -47,6 +47,10 @@ Optional environment defaults:
   SIGMA_WORKERS=16
   SIGMA_ROUNDS=1
   SIGMA_RECURSION_DEPTH=0
+  SIGMA_SCAN_MODE=path
+  SIGMA_SUBDOMAIN_SEARCH=no
+  SIGMA_VHOST_TEMPLATE=
+  SIGMA_RATE=
   SIGMA_TIMEOUT_MS=5000
   SIGMA_INITIAL_DELAY_MS=50
   SIGMA_MIN_DELAY_MS=25
@@ -55,6 +59,7 @@ Optional environment defaults:
   SIGMA_INTERESTING_STATUSES=200,204,301,302,307,308,401,403,405,500
   SIGMA_MIN_BODY_BYTES=0
   SIGMA_MAX_BODY_BYTES=
+  SIGMA_FILTER_WORDS=
   SIGMA_SPEED_MODE=balanced
   SIGMA_CLIENT_PROFILE=research-default
   SIGMA_BUILD_PROFILE=release
@@ -242,6 +247,27 @@ validate_status_list() {
             return 1
         fi
         if (( trimmed < 100 || trimmed > 599 )); then
+            return 1
+        fi
+    done
+
+    return 0
+}
+
+validate_uint_list() {
+    local raw=$1
+    local part trimmed
+
+    if [[ -z "$raw" ]]; then
+        return 0
+    fi
+
+    for part in ${raw//,/ }; do
+        trimmed=${part// /}
+        if [[ -z "$trimmed" ]]; then
+            continue
+        fi
+        if [[ ! "$trimmed" =~ ^[0-9]+$ ]]; then
             return 1
         fi
     done
@@ -536,6 +562,13 @@ wordlist_path_default=${SIGMA_WORDLIST:-wordlist.txt}
 workers_default=${SIGMA_WORKERS:-16}
 rounds_default=${SIGMA_ROUNDS:-1}
 recursion_depth_default=${SIGMA_RECURSION_DEPTH:-0}
+scan_mode_default=${SIGMA_SCAN_MODE:-path}
+subdomain_search_default=$(as_yes_no "${SIGMA_SUBDOMAIN_SEARCH:-no}")
+if [[ "$subdomain_search_default" == "yes" ]]; then
+    scan_mode_default=vhost
+fi
+vhost_template_default=${SIGMA_VHOST_TEMPLATE:-}
+rate_default=${SIGMA_RATE:-}
 timeout_ms_default=${SIGMA_TIMEOUT_MS:-5000}
 initial_delay_ms_default=${SIGMA_INITIAL_DELAY_MS:-50}
 min_delay_ms_default=${SIGMA_MIN_DELAY_MS:-25}
@@ -544,6 +577,7 @@ latency_threshold_ms_default=${SIGMA_LATENCY_THRESHOLD_MS:-800}
 interesting_statuses_default=${SIGMA_INTERESTING_STATUSES:-200,204,301,302,307,308,401,403,405,500}
 min_body_bytes_default=${SIGMA_MIN_BODY_BYTES:-0}
 max_body_bytes_default=${SIGMA_MAX_BODY_BYTES:-}
+filter_words_default=${SIGMA_FILTER_WORDS:-}
 speed_mode_default=${SIGMA_SPEED_MODE:-balanced}
 client_profile_default=${SIGMA_CLIENT_PROFILE:-research-default}
 build_profile_default=${SIGMA_BUILD_PROFILE:-release}
@@ -578,11 +612,32 @@ prompt_existing_path wordlist_abs "Wordlist path" "File or directory. Relative p
 prompt_choice build_profile "Build profile" "release is the normal choice. debug is faster to rebuild but slower to run." "$build_profile_default" release debug
 
 say_header "2. Workload"
+prompt_choice scan_mode "Scan mode" "path fuzzes URL paths. vhost/subdomain sends candidates through the Host header, like ffuf -H 'Host: FUZZ.domain'." "$scan_mode_default" path vhost
+vhost_template=""
+if [[ "$scan_mode" == "vhost" ]]; then
+    if [[ -z "$vhost_template_default" ]]; then
+        vhost_template_default="FUZZ.$host"
+    fi
+    while true; do
+        prompt_text vhost_template "VHost template" "Host header template. It must include FUZZ, for example FUZZ.example.htb." "$vhost_template_default"
+        if [[ "$vhost_template" == *FUZZ* ]]; then
+            break
+        fi
+        say_warn "VHost template must contain FUZZ."
+    done
+fi
+
 prompt_uint workers "Workers" "Parallel request workers. Higher values increase pressure and can trigger rate limits sooner." "$workers_default" 1 100000
 prompt_uint rounds "Rounds" "How many times to replay the wordlist." "$rounds_default" 1 100000
-prompt_uint recursion_depth "Recursion depth" "0 disables recursion. Use higher values only when you want directory expansion." "$recursion_depth_default" 0 255
+if [[ "$scan_mode" == "vhost" ]]; then
+    recursion_depth=0
+    say_info "Recursion depth is fixed to 0 for vhost/subdomain scans."
+else
+    prompt_uint recursion_depth "Recursion depth" "0 disables recursion. Use higher values only when you want directory expansion." "$recursion_depth_default" 0 255
+fi
 
 say_header "3. Timing"
+prompt_optional_uint rate_limit "Rate limit req/s" "Optional global requests-per-second cap. Use 1200 for your ffuf-style target speed, or leave empty for adaptive delay mode." "$rate_default" 1 10000000
 prompt_uint timeout_ms "Timeout ms" "Per-request timeout in milliseconds." "$timeout_ms_default" 1 86400000
 prompt_uint initial_delay_ms "Initial delay ms" "Starting adaptive delay before the RSNN changes pacing." "$initial_delay_ms_default" 0 86400000
 
@@ -613,6 +668,14 @@ while true; do
         break
     fi
     say_warn "Max body bytes cannot be smaller than min body bytes. Please enter both again."
+done
+
+while true; do
+    prompt_optional_text filter_words "Filter words" "Optional comma-separated word counts to suppress, like ffuf -fw 4. Leave empty to disable." "$filter_words_default"
+    if validate_uint_list "$filter_words"; then
+        break
+    fi
+    say_warn "Enter comma-separated non-negative integers, for example 4 or 4,8."
 done
 
 prompt_yes_no disable_soft_404_filter "Disable soft-404 filter" "Choose yes only if you want every 404-like body reported without baseline suppression." "$disable_soft_404_filter_default"
@@ -650,13 +713,17 @@ printf '  %sHost:%s %s\n' "$BOLD" "$RESET" "$host"
 printf '  %sPort:%s %s\n' "$BOLD" "$RESET" "$port"
 printf '  %sWordlist:%s %s\n' "$BOLD" "$RESET" "$wordlist_abs"
 printf '  %sBuild profile:%s %s\n' "$BOLD" "$RESET" "$build_profile"
+printf '  %sScan mode:%s %s\n' "$BOLD" "$RESET" "$scan_mode"
+printf '  %sVHost template:%s %s\n' "$BOLD" "$RESET" "${vhost_template:-none}"
 printf '  %sWorkers / rounds:%s %s / %s\n' "$BOLD" "$RESET" "$workers" "$rounds"
 printf '  %sRecursion depth:%s %s\n' "$BOLD" "$RESET" "$recursion_depth"
+printf '  %sRate limit:%s %s\n' "$BOLD" "$RESET" "${rate_limit:-adaptive}"
 printf '  %sTimeout ms:%s %s\n' "$BOLD" "$RESET" "$timeout_ms"
 printf '  %sDelay ms:%s initial=%s min=%s max=%s\n' "$BOLD" "$RESET" "$initial_delay_ms" "$min_delay_ms" "$max_delay_ms"
 printf '  %sLatency threshold ms:%s %s\n' "$BOLD" "$RESET" "$latency_threshold_ms"
 printf '  %sInteresting statuses:%s %s\n' "$BOLD" "$RESET" "$interesting_statuses"
 printf '  %sBody size filter:%s min=%s max=%s\n' "$BOLD" "$RESET" "$min_body_bytes" "${max_body_bytes:-none}"
+printf '  %sWord count filter:%s %s\n' "$BOLD" "$RESET" "${filter_words:-none}"
 printf '  %sSpeed mode:%s %s\n' "$BOLD" "$RESET" "$speed_mode"
 printf '  %sClient profile:%s %s\n' "$BOLD" "$RESET" "$client_profile"
 printf '  %sSimulation mode:%s %s\n' "$BOLD" "$RESET" "$simulation_mode"
@@ -701,6 +768,7 @@ CMD=(
     --workers "$workers"
     --rounds "$rounds"
     --recursion-depth "$recursion_depth"
+    --scan-mode "$scan_mode"
     --timeout-ms "$timeout_ms"
     --initial-delay-ms "$initial_delay_ms"
     --min-delay-ms "$min_delay_ms"
@@ -713,7 +781,10 @@ CMD=(
     --client-profile "$client_profile"
 )
 
+append_optional_arg --vhost-template "$vhost_template"
+append_optional_arg --rate "$rate_limit"
 append_optional_arg --max-body-bytes "$max_body_bytes"
+append_optional_arg --filter-words "$filter_words"
 append_flag_if_yes "$simulation_mode" --simulation-mode
 append_flag_if_yes "$compare_profiles_live" --compare-profiles-live
 append_flag_if_yes "$rebuild_client_on_advisory" --rebuild-client-on-advisory
@@ -745,6 +816,9 @@ chmod +x "$run_dir_abs/rerun.sh"
     printf 'port=%s\n' "$port"
     printf 'build_profile=%s\n' "$build_profile"
     printf 'wordlist=%s\n' "$wordlist_abs"
+    printf 'scan_mode=%s\n' "$scan_mode"
+    printf 'vhost_template=%s\n' "${vhost_template:-none}"
+    printf 'rate_limit=%s\n' "${rate_limit:-adaptive}"
     printf 'workers=%s\n' "$workers"
     printf 'rounds=%s\n' "$rounds"
     printf 'recursion_depth=%s\n' "$recursion_depth"
@@ -756,6 +830,7 @@ chmod +x "$run_dir_abs/rerun.sh"
     printf 'interesting_statuses=%s\n' "$interesting_statuses"
     printf 'min_body_bytes=%s\n' "$min_body_bytes"
     printf 'max_body_bytes=%s\n' "${max_body_bytes:-none}"
+    printf 'filter_words=%s\n' "${filter_words:-none}"
     printf 'speed_mode=%s\n' "$speed_mode"
     printf 'client_profile=%s\n' "$client_profile"
     printf 'simulation_mode=%s\n' "$simulation_mode"
