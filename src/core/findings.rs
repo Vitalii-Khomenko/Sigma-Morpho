@@ -34,6 +34,7 @@ pub struct FindingsConfig {
     pub findings_file: PathBuf,
     pub min_body_bytes: usize,
     pub max_body_bytes: Option<usize>,
+    pub filter_words: BTreeSet<usize>,
     pub soft_404_fingerprint: Option<Soft404Fingerprint>,
     interesting_statuses: BTreeSet<u16>,
 }
@@ -52,12 +53,14 @@ impl FindingsConfig {
         interesting_statuses: Vec<u16>,
         min_body_bytes: usize,
         max_body_bytes: Option<usize>,
+        filter_words: Vec<usize>,
         soft_404_fingerprint: Option<Soft404Fingerprint>,
     ) -> Self {
         Self {
             findings_file,
             min_body_bytes,
             max_body_bytes,
+            filter_words: filter_words.into_iter().collect(),
             soft_404_fingerprint,
             interesting_statuses: interesting_statuses.into_iter().collect(),
         }
@@ -73,6 +76,7 @@ impl FindingsConfig {
                 .max_body_bytes
                 .map(|max| metric.body_size > max)
                 .unwrap_or(false)
+            || self.filter_words.contains(&metric.body_words)
         {
             return FindingDecision::FilteredByBodyLength;
         }
@@ -131,13 +135,23 @@ impl FindingWriter {
 
         writeln!(
             writer,
-            "# Sigma Morpho findings\n# statuses={}\n# min_body_bytes={}\n# max_body_bytes={}\n# soft_404_filter={}",
+            "# Sigma Morpho findings\n# statuses={}\n# min_body_bytes={}\n# max_body_bytes={}\n# filter_words={}\n# soft_404_filter={}",
             config.render_statuses(),
             config.min_body_bytes,
             config
                 .max_body_bytes
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "none".to_string()),
+            if config.filter_words.is_empty() {
+                "none".to_string()
+            } else {
+                config
+                    .filter_words
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            },
             config.soft_404_fingerprint.is_some()
         )?;
 
@@ -155,9 +169,10 @@ impl FindingWriter {
     pub fn record(&mut self, metric: &ResponseMetric) -> Result<()> {
         writeln!(
             self.writer,
-            "status={} bytes={} latency_ms={} fingerprint={} path={}",
+            "status={} bytes={} words={} latency_ms={} fingerprint={} path={}",
             metric.status,
             metric.body_size,
+            metric.body_words,
             metric.latency_ms,
             metric.body_fingerprint,
             metric.path
@@ -179,6 +194,7 @@ mod tests {
             vec![200, 404],
             0,
             None,
+            vec![],
             Some(Soft404Fingerprint {
                 status: 200,
                 body_size: 1234,
@@ -190,6 +206,7 @@ mod tests {
             status: 200,
             latency_ms: 40,
             body_size: 1234,
+            body_words: 0,
             body_fingerprint: 99,
             transport_error: false,
         };
@@ -199,13 +216,15 @@ mod tests {
 
     #[test]
     fn filters_by_status_and_body_length() {
-        let config = FindingsConfig::new("findings.txt".into(), vec![200], 10, Some(50), None);
+        let config =
+            FindingsConfig::new("findings.txt".into(), vec![200], 10, Some(50), vec![], None);
 
         let status_filtered = ResponseMetric {
             path: "/x".to_string(),
             status: 403,
             latency_ms: 10,
             body_size: 20,
+            body_words: 0,
             body_fingerprint: 1,
             transport_error: false,
         };
@@ -214,6 +233,7 @@ mod tests {
             status: 200,
             latency_ms: 10,
             body_size: 5,
+            body_words: 0,
             body_fingerprint: 1,
             transport_error: false,
         };
@@ -224,6 +244,25 @@ mod tests {
         );
         assert_eq!(
             config.classify(&body_filtered),
+            FindingDecision::FilteredByBodyLength
+        );
+    }
+
+    #[test]
+    fn filters_by_word_count() {
+        let config = FindingsConfig::new("findings.txt".into(), vec![200], 0, None, vec![4], None);
+        let metric = ResponseMetric {
+            path: "host=missing.example.htb".to_string(),
+            status: 200,
+            latency_ms: 10,
+            body_size: 32,
+            body_words: 4,
+            body_fingerprint: 1,
+            transport_error: false,
+        };
+
+        assert_eq!(
+            config.classify(&metric),
             FindingDecision::FilteredByBodyLength
         );
     }

@@ -1,0 +1,9 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded dashmap v6.1.0
+  Downloaded hashbrown v0.14.5
+   Compiling crossbeam-utils v0.8.21
+   Compiling hashbrown v0.14.5
+   Compiling dashmap v6.1.0
+   Compiling sigma_morpho v0.1.0 (/home/warmond/AI-Research/Sigma-Morpho)
+    Finished `release` profile [optimized] target(s) in 8.54s

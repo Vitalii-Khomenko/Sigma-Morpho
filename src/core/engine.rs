@@ -1,4 +1,4 @@
-use crate::cli::AppConfig;
+use crate::cli::{AppConfig, ScanMode};
 use crate::core::findings::{FindingDecision, FindingWriter, FindingsConfig, Soft404Fingerprint};
 use crate::core::metrics::{NeuroTelemetry, ResponseMetric, RunSummary};
 use crate::core::simulation::SafeActionSimulator;
@@ -10,19 +10,20 @@ use crate::network::runtime::{
 use crate::network::tor::TorController;
 use crate::neuro::rsnn::{NeuroAction, Rsnn, RsnnConfig};
 use anyhow::{Context, Result};
-use rand::random;
 use dashmap::DashSet;
+use rand::random;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, watch, Mutex, Notify};
+use tokio::sync::{mpsc, watch, Mutex, Notify, Semaphore};
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
+use tokio::time::{sleep, MissedTickBehavior};
 
 pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let initial_jobs = build_jobs(&paths, config.rounds);
     let initial_total_jobs = initial_jobs.len();
+    let scan_plan = ScanPlan::from_config(&config);
 
     let mut client_factory = SafeClientFactory::new(ClientRuntimeConfig {
         base_url: config.base_url.clone(),
@@ -37,9 +38,10 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let (client_command_tx, client_command_rx) = mpsc::channel(4);
     let client_rebuilds = Arc::new(AtomicUsize::new(0));
 
-    let tor_controller = config.tor_control.clone().map(|control_address| {
-        TorController::new(control_address, config.tor_password.clone())
-    });
+    let tor_controller = config
+        .tor_control
+        .clone()
+        .map(|control_address| TorController::new(control_address, config.tor_password.clone()));
 
     let client_controller = spawn_safe_client_controller(
         client_command_rx,
@@ -53,13 +55,14 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         None
     } else {
         let probe_client = client_rx.borrow().clone();
-        probe_soft_404(probe_client.as_ref()).await
+        probe_soft_404(probe_client.as_ref(), &scan_plan).await
     };
     let findings_config = FindingsConfig::new(
         config.findings_file.clone(),
         config.interesting_statuses.clone(),
         config.min_body_bytes,
         config.max_body_bytes,
+        config.filter_words.clone(),
         soft_404_fingerprint.clone(),
     );
     let seed_paths = Arc::new(paths);
@@ -92,6 +95,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         let worker_delay_rx = delay_rx.clone();
         let worker_command_tx = client_command_tx.clone();
         let worker_processed_total = Arc::clone(&processed_total);
+        let worker_scan_plan = scan_plan.clone();
 
         let handle = tokio::spawn(async move {
             worker_loop(
@@ -103,6 +107,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
                 worker_command_tx,
                 worker_processed_total,
                 rebuild_client_every,
+                worker_scan_plan,
             )
             .await
         });
@@ -116,6 +121,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let mut summary = RunSummary::default();
     summary.client_profile = config.client_profile.as_str().to_string();
     summary.speed_mode = config.speed_mode.as_str().to_string();
+    summary.filtered_word_counts = config.filter_words.clone();
     summary.simulation_mode = config.simulation_mode;
     summary.findings_file = config.findings_file.display().to_string();
     summary.soft_404_filter_active = soft_404_fingerprint.is_some();
@@ -146,6 +152,85 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     }
 
     Ok(summary)
+}
+
+#[derive(Clone)]
+struct ScanPlan {
+    mode: ScanMode,
+    vhost_template: Option<String>,
+    rate_limiter: Option<Arc<Semaphore>>,
+}
+
+impl ScanPlan {
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            mode: config.scan_mode,
+            vhost_template: config.vhost_template.clone(),
+            rate_limiter: config
+                .rate_per_second
+                .map(|rate| spawn_rate_limiter(rate, config.workers)),
+        }
+    }
+
+    async fn wait_turn(&self, delay_ms: u64) -> Result<()> {
+        if let Some(limiter) = &self.rate_limiter {
+            let permit = limiter.acquire().await?;
+            permit.forget();
+        } else {
+            sleep(Duration::from_millis(delay_ms)).await;
+        }
+
+        Ok(())
+    }
+
+    async fn execute(&self, client: &NetworkClient, token: &str) -> ResponseMetric {
+        match self.mode {
+            ScanMode::Path => client.execute_path(token).await,
+            ScanMode::Vhost => {
+                let host = self.render_vhost(token);
+                client.execute_vhost(&host).await
+            }
+        }
+    }
+
+    fn render_vhost(&self, token: &str) -> String {
+        let candidate = token.trim().trim_matches('.');
+        self.vhost_template
+            .as_deref()
+            .unwrap_or("FUZZ")
+            .replace("FUZZ", candidate)
+    }
+}
+
+fn spawn_rate_limiter(rate_per_second: u64, workers: usize) -> Arc<Semaphore> {
+    let limiter = Arc::new(Semaphore::new(0));
+    let refill_limiter = Arc::clone(&limiter);
+    let burst_capacity = (rate_per_second as usize).max(workers).max(1);
+
+    tokio::spawn(async move {
+        let tick_ms = 10_u64;
+        let mut carry = 0_u64;
+        let mut interval = tokio::time::interval(Duration::from_millis(tick_ms));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        loop {
+            interval.tick().await;
+            carry = carry.saturating_add(rate_per_second.saturating_mul(tick_ms));
+            let permits = (carry / 1000) as usize;
+            carry %= 1000;
+
+            if permits == 0 {
+                continue;
+            }
+
+            let available = refill_limiter.available_permits();
+            if available < burst_capacity {
+                refill_limiter.add_permits(permits.min(burst_capacity - available));
+            }
+        }
+    });
+
+    limiter
 }
 
 fn build_jobs(paths: &[String], rounds: usize) -> Vec<WorkItem> {
@@ -229,7 +314,10 @@ impl JobQueue {
                     if exp.seed_index < self.seed_paths.len() {
                         state.active_expansions.push_back(exp);
                     }
-                    return Some(WorkItem { path: child_path, depth });
+                    return Some(WorkItem {
+                        path: child_path,
+                        depth,
+                    });
                 }
             }
 
@@ -295,6 +383,7 @@ async fn worker_loop(
     client_command_tx: mpsc::Sender<ClientControlCommand>,
     processed_total: Arc<AtomicUsize>,
     rebuild_client_every: Option<usize>,
+    scan_plan: ScanPlan,
 ) -> Result<RunSummary> {
     let mut local = RunSummary::default();
 
@@ -304,10 +393,10 @@ async fn worker_loop(
         };
 
         let delay_ms = *delay_rx.borrow();
-        sleep(Duration::from_millis(delay_ms)).await;
+        scan_plan.wait_turn(delay_ms).await?;
 
         let client = client_rx.borrow().clone();
-        let metric = client.execute_path(&job.path).await;
+        let metric = scan_plan.execute(client.as_ref(), &job.path).await;
         let discovered = queue.maybe_enqueue_children(&job, &metric).await;
         if discovered > 0 {
             println!(
@@ -369,7 +458,7 @@ fn spawn_neuro_actor(
 
     tokio::task::spawn_blocking(move || -> Result<NeuroTelemetry> {
         let mut rsnn = Rsnn::new(rsnn_config);
-        
+
         if let Some(ref path) = state_file {
             if path.exists() {
                 if let Ok(content) = std::fs::read_to_string(path) {
@@ -492,7 +581,11 @@ fn spawn_neuro_actor(
             let state = rsnn.extract_state();
             if let Ok(content) = serde_json::to_string(&state) {
                 if let Err(e) = std::fs::write(path, content) {
-                    eprintln!("[SNN WARNING] Failed to save state to {}: {}", path.display(), e);
+                    eprintln!(
+                        "[SNN WARNING] Failed to save state to {}: {}",
+                        path.display(),
+                        e
+                    );
                 } else {
                     println!("[SNN] Saved memory state to {}", path.display());
                 }
@@ -503,9 +596,12 @@ fn spawn_neuro_actor(
     })
 }
 
-async fn probe_soft_404(client: &NetworkClient) -> Option<Soft404Fingerprint> {
+async fn probe_soft_404(
+    client: &NetworkClient,
+    scan_plan: &ScanPlan,
+) -> Option<Soft404Fingerprint> {
     let probe_path = format!("sigma-morpho-soft404-probe-{:016x}", random::<u64>());
-    let metric = client.execute_path(&probe_path).await;
+    let metric = scan_plan.execute(client, &probe_path).await;
     let fingerprint = Soft404Fingerprint::from_metric(&metric);
 
     if let Some(fingerprint) = &fingerprint {
@@ -559,6 +655,7 @@ mod tests {
             status: 301,
             latency_ms: 10,
             body_size: 20,
+            body_words: 0,
             body_fingerprint: 1,
             transport_error: false,
         };
@@ -593,6 +690,7 @@ mod tests {
             status: 301,
             latency_ms: 10,
             body_size: 20,
+            body_words: 0,
             body_fingerprint: 1,
             transport_error: false,
         };
@@ -627,6 +725,7 @@ mod tests {
             status: 301,
             latency_ms: 10,
             body_size: 20,
+            body_words: 0,
             body_fingerprint: 1,
             transport_error: false,
         };

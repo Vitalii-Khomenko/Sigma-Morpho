@@ -2,6 +2,7 @@ use crate::core::metrics::ResponseMetric;
 use crate::core::speed::SpeedMode;
 use crate::network::profile::ClientProfile;
 use anyhow::{Context, Result};
+use reqwest::header::HOST;
 use reqwest::{Client, Proxy};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -33,11 +34,19 @@ impl NetworkClient {
 
         let mut clients = Vec::new();
         if proxy_list.is_empty() {
-            clients.push(Self::build_client(timeout_ms, profile, speed_mode, workers, None)?);
+            clients.push(Self::build_client(
+                timeout_ms, profile, speed_mode, workers, None,
+            )?);
         } else {
             let per_proxy_workers = (workers / proxy_list.len()).max(1);
             for p in &proxy_list {
-                clients.push(Self::build_client(timeout_ms, profile, speed_mode, per_proxy_workers, Some(p.clone()))?);
+                clients.push(Self::build_client(
+                    timeout_ms,
+                    profile,
+                    speed_mode,
+                    per_proxy_workers,
+                    Some(p.clone()),
+                )?);
             }
         }
 
@@ -47,7 +56,7 @@ impl NetworkClient {
     fn build_client(
         timeout_ms: u64,
         profile: ClientProfile,
-        _speed_mode: SpeedMode,
+        speed_mode: SpeedMode,
         workers: usize,
         proxy_url: Option<String>,
     ) -> Result<Client> {
@@ -55,24 +64,23 @@ impl NetworkClient {
             .timeout(Duration::from_millis(timeout_ms))
             .user_agent(profile.user_agent())
             .default_headers(profile.default_headers())
-            .pool_max_idle_per_host(workers.max(1))
+            .pool_max_idle_per_host(speed_mode.pool_max_idle_per_host(workers))
             .pool_idle_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
+            .tcp_nodelay(true)
             .use_rustls_tls()
-            .min_tls_version(reqwest::tls::Version::TLS_1_2) 
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
             .brotli(true)
             .deflate(true)
             .gzip(true);
 
         if let Some(url) = proxy_url {
-            let proxy = Proxy::all(&url)
-                .with_context(|| format!("Invalid proxy URL: {}", url))?;
+            let proxy = Proxy::all(&url).with_context(|| format!("Invalid proxy URL: {}", url))?;
             builder = builder.proxy(proxy);
         }
 
         builder.build().context("Failed to build HTTP client")
     }
-
 
     pub async fn execute_path(&self, path: &str) -> ResponseMetric {
         let normalized_path = path.trim_start_matches('/');
@@ -90,6 +98,7 @@ impl NetworkClient {
                     status: 0,
                     latency_ms: 0,
                     body_size: 0,
+                    body_words: 0,
                     body_fingerprint: 0,
                     transport_error: true,
                 };
@@ -97,22 +106,60 @@ impl NetworkClient {
         };
 
         let start = Instant::now();
-        
+
         let client = {
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
-            self.clients.choose(&mut rng).unwrap_or(&self.clients[0]).clone()
+            self.clients
+                .choose(&mut rng)
+                .unwrap_or(&self.clients[0])
+                .clone()
         };
-        
+
         let response = client.get(url).send().await;
+        self.collect_metric(response, path_for_metric, start).await
+    }
+
+    pub async fn execute_vhost(&self, host_header: &str) -> ResponseMetric {
+        let label = format!("host={host_header}");
+        let start = Instant::now();
+
+        let client = {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            self.clients
+                .choose(&mut rng)
+                .unwrap_or(&self.clients[0])
+                .clone()
+        };
+
+        let response = client
+            .get(self.base_url.clone())
+            .header(HOST, host_header)
+            .send()
+            .await;
+
+        self.collect_metric(response, label, start).await
+    }
+
+    async fn collect_metric(
+        &self,
+        response: reqwest::Result<reqwest::Response>,
+        path_for_metric: String,
+        start: Instant,
+    ) -> ResponseMetric {
         let latency_ms = start.elapsed().as_millis() as u64;
 
         match response {
             Ok(resp) => {
                 let status = resp.status().as_u16();
-                let (body_size, body_fingerprint) = match resp.bytes().await {
-                    Ok(bytes) => (bytes.len(), fingerprint_bytes(bytes.as_ref())),
-                    Err(_) => (0, 0),
+                let (body_size, body_words, body_fingerprint) = match resp.bytes().await {
+                    Ok(bytes) => (
+                        bytes.len(),
+                        count_words(bytes.as_ref()),
+                        fingerprint_bytes(bytes.as_ref()),
+                    ),
+                    Err(_) => (0, 0, 0),
                 };
 
                 ResponseMetric {
@@ -120,6 +167,7 @@ impl NetworkClient {
                     status,
                     latency_ms,
                     body_size,
+                    body_words,
                     body_fingerprint,
                     transport_error: false,
                 }
@@ -129,6 +177,7 @@ impl NetworkClient {
                 status: 0,
                 latency_ms,
                 body_size: 0,
+                body_words: 0,
                 body_fingerprint: 0,
                 transport_error: true,
             },
@@ -140,4 +189,8 @@ fn fingerprint_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);
     hasher.finish()
+}
+
+fn count_words(bytes: &[u8]) -> usize {
+    String::from_utf8_lossy(bytes).split_whitespace().count()
 }

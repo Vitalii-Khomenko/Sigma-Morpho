@@ -28,6 +28,13 @@ async fn main() -> Result<()> {
         if config.compare_profiles_live {
             println!("[*] Sigma Morpho live profile comparison started");
             println!("[*] Target: {}", config.base_url);
+            println!("[*] Scan mode: {}", config.scan_mode.as_str());
+            if let Some(template) = &config.vhost_template {
+                println!("[*] VHost template: {}", template);
+            }
+            if let Some(rate) = config.rate_per_second {
+                println!("[*] Rate limit: {} req/s", rate);
+            }
             println!(
                 "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
                 paths.len(),
@@ -55,6 +62,13 @@ async fn main() -> Result<()> {
             println!("[*] Sigma Morpho started");
             println!("[*] Target: {}", config.base_url);
             println!("[*] Client profile: {}", config.client_profile.as_str());
+            println!("[*] Scan mode: {}", config.scan_mode.as_str());
+            if let Some(template) = &config.vhost_template {
+                println!("[*] VHost template: {}", template);
+            }
+            if let Some(rate) = config.rate_per_second {
+                println!("[*] Rate limit: {} req/s", rate);
+            }
             println!(
                 "[*] Workload: {} seed paths x {} rounds, workers: {}, recursion depth: {}",
                 paths.len(),

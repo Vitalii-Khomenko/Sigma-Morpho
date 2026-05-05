@@ -58,6 +58,32 @@ cargo run --release -- \
 2. If 403 blocks become consistent, the Rotator issues a new `reqwest::Client` with a vastly different User-Agent and connection headers.
 3. If severe blocking persists continuously, the Tor rotater talks to port 9051, sends `NEWNYM`, waits 5 seconds for proxy propagation, and restarts request flow on the new IP address.
 
+### 3. Virtual Host / Subdomain Fuzzing
+Similar to:
+```bash
+ffuf -w dict/bitquark-subdomains-top100000.txt:FUZZ \
+  -u http://devvortex.htb \
+  -H 'Host: FUZZ.devvortex.htb' \
+  -fw 4 \
+  -t 100
+```
+
+Sigma Morpho equivalent:
+```bash
+cargo run --release -- \
+  --base-url http://devvortex.htb \
+  --wordlist dict/bitquark-subdomains-top100000.txt \
+  --subdomain-search \
+  --vhost-template FUZZ.devvortex.htb \
+  --filter-words 4 \
+  --workers 200 \
+  --rate 1200 \
+  --speed-mode aggressive \
+  --authorized-target
+```
+
+`--subdomain-search` sends every candidate to the target URL while replacing `FUZZ` in the Host header template. `--rate` is a global requests-per-second limiter, so `--rate 1200` aims for 1200 req/s when the target, network, and worker count can sustain it.
+
 ## 🛠️ What Can Still Be Improved
 There are always routes for further stealth:
 1. **Adding Real Device Fingerprinting**: Currently, User-Agent strings rotate between static client profiles. It could be expanded with Chromium's JA3 / TLS Fingerprinting (e.g., using `reqwest-impersonate`) to trick advanced CDNs (Cloudflare, Akamai).

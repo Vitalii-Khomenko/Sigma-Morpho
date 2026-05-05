@@ -11,6 +11,7 @@ pub struct ResponseMetric {
     pub status: u16,
     pub latency_ms: u64,
     pub body_size: usize,
+    pub body_words: usize,
     pub body_fingerprint: u64,
     pub transport_error: bool,
 }
@@ -31,6 +32,7 @@ pub struct RunSummary {
     pub min_latency_ms: u64,
     pub max_latency_ms: u64,
     pub total_body_bytes: u128,
+    pub filtered_word_counts: Vec<usize>,
     pub hits_200: Vec<String>,
     pub final_delay_ms: u64,
     pub client_profile: String,
@@ -75,6 +77,7 @@ impl Default for RunSummary {
             min_latency_ms: u64::MAX,
             max_latency_ms: 0,
             total_body_bytes: 0,
+            filtered_word_counts: Vec::new(),
             hits_200: Vec::new(),
             final_delay_ms: 0,
             client_profile: "research-default".to_string(),
@@ -273,6 +276,7 @@ impl RunSummary {
         self.min_latency_ms = self.min_latency_ms.min(other.min_latency_ms);
         self.max_latency_ms = self.max_latency_ms.max(other.max_latency_ms);
         self.total_body_bytes += other.total_body_bytes;
+        self.filtered_word_counts.extend(other.filtered_word_counts);
         self.hits_200.extend(other.hits_200);
         self.simulation_notes.extend(other.simulation_notes);
         self.logged_findings += other.logged_findings;
@@ -354,6 +358,17 @@ impl RunSummary {
         let _ = writeln!(&mut out, "Min latency: {} ms", min_latency);
         let _ = writeln!(&mut out, "Max latency: {} ms", self.max_latency_ms);
         let _ = writeln!(&mut out, "Total body bytes: {}", self.total_body_bytes);
+        if !self.filtered_word_counts.is_empty() {
+            let _ = writeln!(
+                &mut out,
+                "Filtered word counts: {}",
+                self.filtered_word_counts
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+        }
         let _ = writeln!(&mut out, "Final adaptive delay: {} ms", self.final_delay_ms);
         let _ = writeln!(
             &mut out,
@@ -438,6 +453,7 @@ mod tests {
             status: 404,
             latency_ms: 20,
             body_size: 0,
+            body_words: 0,
             body_fingerprint: 0,
             transport_error: false,
         });
@@ -446,6 +462,7 @@ mod tests {
             status: 429,
             latency_ms: 30,
             body_size: 0,
+            body_words: 0,
             body_fingerprint: 0,
             transport_error: false,
         });

@@ -10,6 +10,21 @@ use crate::core::research::ScenarioKind;
 use crate::core::speed::SpeedMode;
 use crate::network::profile::ClientProfile;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum ScanMode {
+    Path,
+    Vhost,
+}
+
+impl ScanMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::Vhost => "vhost",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "sigma_morpho",
@@ -31,6 +46,18 @@ struct CliArgs {
 
     #[arg(long, default_value_t = 0)]
     recursion_depth: u8,
+
+    #[arg(long, value_enum, default_value_t = ScanMode::Path)]
+    scan_mode: ScanMode,
+
+    #[arg(long)]
+    subdomain_search: bool,
+
+    #[arg(long, value_name = "HOST_TEMPLATE")]
+    vhost_template: Option<String>,
+
+    #[arg(long, value_name = "REQUESTS_PER_SECOND")]
+    rate: Option<u64>,
 
     #[arg(long, default_value_t = 5000)]
     timeout_ms: u64,
@@ -68,6 +95,9 @@ struct CliArgs {
 
     #[arg(long)]
     max_body_bytes: Option<usize>,
+
+    #[arg(long, alias = "fw", value_name = "WORD_COUNTS", value_delimiter = ',')]
+    filter_words: Vec<usize>,
 
     #[arg(long)]
     disable_soft_404_filter: bool,
@@ -116,6 +146,9 @@ pub struct AppConfig {
     pub workers: usize,
     pub rounds: usize,
     pub recursion_depth: u8,
+    pub scan_mode: ScanMode,
+    pub vhost_template: Option<String>,
+    pub rate_per_second: Option<u64>,
     pub requested_timeout_ms: u64,
     pub timeout_ms: u64,
     pub requested_initial_delay_ms: u64,
@@ -129,6 +162,7 @@ pub struct AppConfig {
     pub interesting_statuses: Vec<u16>,
     pub min_body_bytes: usize,
     pub max_body_bytes: Option<usize>,
+    pub filter_words: Vec<usize>,
     pub disable_soft_404_filter: bool,
     pub speed_mode: SpeedMode,
     pub client_profile: ClientProfile,
@@ -153,6 +187,9 @@ impl AppConfig {
         }
         if args.rounds == 0 {
             bail!("--rounds must be at least 1");
+        }
+        if args.rate.map(|rate| rate == 0).unwrap_or(false) {
+            bail!("--rate must be greater than 0 when provided");
         }
         if args.timeout_ms == 0 {
             bail!("--timeout-ms must be greater than 0");
@@ -193,6 +230,30 @@ impl AppConfig {
         let base_url = Url::parse(&raw_base_url)
             .with_context(|| format!("Invalid --base-url: {}", raw_base_url))?;
 
+        let scan_mode = if args.subdomain_search {
+            ScanMode::Vhost
+        } else {
+            args.scan_mode
+        };
+        let vhost_template = match (scan_mode, args.vhost_template) {
+            (ScanMode::Path, _) => None,
+            (ScanMode::Vhost, Some(template)) => {
+                if !template.contains("FUZZ") {
+                    bail!("--vhost-template must contain FUZZ, for example FUZZ.example.htb");
+                }
+                Some(template)
+            }
+            (ScanMode::Vhost, None) => {
+                let host = base_url
+                    .host_str()
+                    .ok_or_else(|| anyhow!("--base-url must contain a host"))?;
+                Some(format!("FUZZ.{host}"))
+            }
+        };
+        if scan_mode == ScanMode::Vhost && args.recursion_depth > 0 {
+            bail!("--recursion-depth is only supported with --scan-mode path");
+        }
+
         validate_target(&base_url, args.authorized_target)?;
         let interesting_statuses = parse_status_list(&args.interesting_statuses)?;
         let initial_delay_ms = args.client_profile.adjusted_initial_delay(
@@ -219,6 +280,9 @@ impl AppConfig {
             workers: args.workers,
             rounds: args.rounds,
             recursion_depth: args.recursion_depth,
+            scan_mode,
+            vhost_template,
+            rate_per_second: args.rate,
             requested_timeout_ms: args.timeout_ms,
             timeout_ms: args.client_profile.adjusted_timeout(args.timeout_ms),
             requested_initial_delay_ms: args.initial_delay_ms,
@@ -232,6 +296,7 @@ impl AppConfig {
             interesting_statuses,
             min_body_bytes: args.min_body_bytes,
             max_body_bytes: args.max_body_bytes,
+            filter_words: args.filter_words,
             disable_soft_404_filter: args.disable_soft_404_filter,
             speed_mode: args.speed_mode,
             client_profile: args.client_profile,
@@ -263,6 +328,8 @@ impl AppConfig {
         next.snn_state_file = self.snn_state_file.clone();
         next.proxies_file = self.proxies_file.clone();
         next.proxies = self.proxies.clone();
+        next.vhost_template = self.vhost_template.clone();
+        next.filter_words = self.filter_words.clone();
         next
     }
 
@@ -426,7 +493,7 @@ fn parse_status_list(raw: &str) -> Result<Vec<u16>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_status_list, validate_target, AppConfig};
+    use super::{parse_status_list, validate_target, AppConfig, ScanMode};
     use crate::core::research::ScenarioKind;
     use crate::core::speed::SpeedMode;
     use crate::network::profile::ClientProfile;
@@ -470,6 +537,9 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            scan_mode: ScanMode::Path,
+            vhost_template: None,
+            rate_per_second: None,
             requested_timeout_ms: 1000,
             timeout_ms: 1000,
             requested_initial_delay_ms: 25,
@@ -483,6 +553,7 @@ mod tests {
             interesting_statuses: vec![200, 403],
             min_body_bytes: 0,
             max_body_bytes: None,
+            filter_words: vec![],
             disable_soft_404_filter: false,
             speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
@@ -522,6 +593,9 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            scan_mode: ScanMode::Path,
+            vhost_template: None,
+            rate_per_second: None,
             requested_timeout_ms: 1000,
             timeout_ms: 1000,
             requested_initial_delay_ms: 25,
@@ -535,6 +609,7 @@ mod tests {
             interesting_statuses: vec![200, 403],
             min_body_bytes: 0,
             max_body_bytes: None,
+            filter_words: vec![],
             disable_soft_404_filter: false,
             speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
@@ -568,6 +643,9 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            scan_mode: ScanMode::Path,
+            vhost_template: None,
+            rate_per_second: None,
             requested_timeout_ms: 1000,
             timeout_ms: 1000,
             requested_initial_delay_ms: 50,
@@ -581,6 +659,7 @@ mod tests {
             interesting_statuses: vec![200, 403],
             min_body_bytes: 0,
             max_body_bytes: None,
+            filter_words: vec![],
             disable_soft_404_filter: false,
             speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ApiDiagnostic,
@@ -609,6 +688,9 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            scan_mode: ScanMode::Path,
+            vhost_template: None,
+            rate_per_second: None,
             requested_timeout_ms: 1000,
             timeout_ms: 1000,
             requested_initial_delay_ms: 50,
@@ -622,6 +704,7 @@ mod tests {
             interesting_statuses: vec![200, 403],
             min_body_bytes: 0,
             max_body_bytes: None,
+            filter_words: vec![],
             disable_soft_404_filter: false,
             speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
@@ -651,6 +734,9 @@ mod tests {
             workers: 1,
             rounds: 1,
             recursion_depth: 0,
+            scan_mode: ScanMode::Path,
+            vhost_template: None,
+            rate_per_second: None,
             requested_timeout_ms: 1000,
             timeout_ms: 1000,
             requested_initial_delay_ms: 50,
@@ -664,6 +750,7 @@ mod tests {
             interesting_statuses: vec![200],
             min_body_bytes: 0,
             max_body_bytes: None,
+            filter_words: vec![],
             disable_soft_404_filter: false,
             speed_mode: SpeedMode::Balanced,
             client_profile: ClientProfile::ResearchDefault,
