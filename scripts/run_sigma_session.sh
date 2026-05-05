@@ -872,7 +872,9 @@ say_info "Executing Sigma Morpho. Stdout, stderr, timing, and findings will be a
 TIMEFORMAT=$'real=%3R\nuser=%3U\nsys=%3S'
 set +e
 {
-    time "${CMD[@]}" > "$run_dir_abs/sigma.stdout.log" 2> "$run_dir_abs/sigma.stderr.log"
+    time "${CMD[@]}" \
+        > >(tee "$run_dir_abs/sigma.stdout.log") \
+        2> >(tee "$run_dir_abs/sigma.stderr.log" >&2)
 } 2> "$run_dir_abs/time.txt"
 run_exit_code=$?
 set -e

@@ -13,9 +13,9 @@ use anyhow::{Context, Result};
 use dashmap::DashSet;
 use rand::random;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch, Mutex, Notify, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, MissedTickBehavior};
@@ -76,6 +76,16 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     let (metric_tx, metric_rx) = mpsc::channel::<ResponseMetric>(metric_buffer);
     let (delay_tx, delay_rx) = watch::channel(config.initial_delay_ms);
 
+    let processed_total = Arc::new(AtomicUsize::new(0));
+    let progress = Arc::new(ProgressCounters::new(Arc::clone(&processed_total)));
+    let (progress_stop_tx, progress_stop_rx) = watch::channel(false);
+    let progress_handle = spawn_progress_reporter(
+        Arc::clone(&progress),
+        Arc::clone(&queue.scheduled_total),
+        delay_rx.clone(),
+        progress_stop_rx,
+    );
+
     let actor_handle = spawn_neuro_actor(
         metric_rx,
         delay_tx,
@@ -83,8 +93,8 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         &config,
         Arc::clone(&queue.scheduled_total),
         findings_config,
+        Arc::clone(&progress),
     );
-    let processed_total = Arc::new(AtomicUsize::new(0));
     let rebuild_client_every = config.rebuild_client_every;
 
     let mut worker_handles = Vec::with_capacity(config.workers);
@@ -96,6 +106,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
         let worker_command_tx = client_command_tx.clone();
         let worker_processed_total = Arc::clone(&processed_total);
         let worker_scan_plan = scan_plan.clone();
+        let worker_progress = Arc::clone(&progress);
 
         let handle = tokio::spawn(async move {
             worker_loop(
@@ -108,6 +119,7 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
                 worker_processed_total,
                 rebuild_client_every,
                 worker_scan_plan,
+                worker_progress,
             )
             .await
         });
@@ -132,6 +144,10 @@ pub async fn run(config: AppConfig, paths: Vec<String>) -> Result<RunSummary> {
     }
 
     let neuro = actor_handle.await.context("Neuro actor join failed")??;
+    let _ = progress_stop_tx.send(true);
+    progress_handle
+        .await
+        .context("Progress reporter join failed")?;
     client_controller
         .await
         .context("Client controller join failed")??;
@@ -231,6 +247,189 @@ fn spawn_rate_limiter(rate_per_second: u64, workers: usize) -> Arc<Semaphore> {
     });
 
     limiter
+}
+
+struct ProgressCounters {
+    processed: Arc<AtomicUsize>,
+    findings: AtomicUsize,
+    suppressed_soft_404: AtomicUsize,
+    success_2xx: AtomicUsize,
+    redirect_3xx: AtomicUsize,
+    client_4xx: AtomicUsize,
+    server_5xx: AtomicUsize,
+    not_found_404: AtomicUsize,
+    blocked_responses: AtomicUsize,
+    transport_errors: AtomicUsize,
+    latency_sum_ms: AtomicU64,
+    latency_samples: AtomicUsize,
+}
+
+impl ProgressCounters {
+    fn new(processed: Arc<AtomicUsize>) -> Self {
+        Self {
+            processed,
+            findings: AtomicUsize::new(0),
+            suppressed_soft_404: AtomicUsize::new(0),
+            success_2xx: AtomicUsize::new(0),
+            redirect_3xx: AtomicUsize::new(0),
+            client_4xx: AtomicUsize::new(0),
+            server_5xx: AtomicUsize::new(0),
+            not_found_404: AtomicUsize::new(0),
+            blocked_responses: AtomicUsize::new(0),
+            transport_errors: AtomicUsize::new(0),
+            latency_sum_ms: AtomicU64::new(0),
+            latency_samples: AtomicUsize::new(0),
+        }
+    }
+
+    fn record_metric(&self, metric: &ResponseMetric) {
+        self.latency_sum_ms
+            .fetch_add(metric.latency_ms, Ordering::Relaxed);
+        self.latency_samples.fetch_add(1, Ordering::Relaxed);
+
+        if metric.transport_error {
+            self.transport_errors.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        match metric.status {
+            200..=299 => {
+                self.success_2xx.fetch_add(1, Ordering::Relaxed);
+            }
+            300..=399 => {
+                self.redirect_3xx.fetch_add(1, Ordering::Relaxed);
+            }
+            400..=499 => {
+                self.client_4xx.fetch_add(1, Ordering::Relaxed);
+                if metric.status == 404 {
+                    self.not_found_404.fetch_add(1, Ordering::Relaxed);
+                }
+                if matches!(metric.status, 403 | 429) {
+                    self.blocked_responses.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            500..=599 => {
+                self.server_5xx.fetch_add(1, Ordering::Relaxed);
+                if metric.status == 503 {
+                    self.blocked_responses.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn record_finding(&self) {
+        self.findings.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_soft_404_suppression(&self) {
+        self.suppressed_soft_404.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+fn spawn_progress_reporter(
+    progress: Arc<ProgressCounters>,
+    scheduled_total: Arc<AtomicUsize>,
+    delay_rx: watch::Receiver<u64>,
+    mut stop_rx: watch::Receiver<bool>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let started = Instant::now();
+        let mut last_tick = Instant::now();
+        let mut last_processed = 0_usize;
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        interval.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let now = Instant::now();
+                    print_progress_snapshot(
+                        &progress,
+                        &scheduled_total,
+                        &delay_rx,
+                        started,
+                        now.duration_since(last_tick),
+                        &mut last_processed,
+                        false,
+                    );
+                    last_tick = now;
+                }
+                changed = stop_rx.changed() => {
+                    if changed.is_err() || *stop_rx.borrow() {
+                        let now = Instant::now();
+                        print_progress_snapshot(
+                            &progress,
+                            &scheduled_total,
+                            &delay_rx,
+                            started,
+                            now.duration_since(last_tick),
+                            &mut last_processed,
+                            true,
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn print_progress_snapshot(
+    progress: &ProgressCounters,
+    scheduled_total: &AtomicUsize,
+    delay_rx: &watch::Receiver<u64>,
+    started: Instant,
+    tick_elapsed: Duration,
+    last_processed: &mut usize,
+    final_snapshot: bool,
+) {
+    let processed = progress.processed.load(Ordering::Relaxed);
+    let total = scheduled_total.load(Ordering::Relaxed);
+    let progress_pct = if total == 0 {
+        0.0
+    } else {
+        (processed as f64 / total as f64) * 100.0
+    };
+    let tick_seconds = tick_elapsed.as_secs_f64().max(0.001);
+    let current_rps = processed.saturating_sub(*last_processed) as f64 / tick_seconds;
+    *last_processed = processed;
+
+    let elapsed_seconds = started.elapsed().as_secs_f64().max(0.001);
+    let average_rps = processed as f64 / elapsed_seconds;
+    let latency_samples = progress.latency_samples.load(Ordering::Relaxed);
+    let avg_latency = if latency_samples == 0 {
+        0.0
+    } else {
+        progress.latency_sum_ms.load(Ordering::Relaxed) as f64 / latency_samples as f64
+    };
+    let prefix = if final_snapshot {
+        "[STATS final]"
+    } else {
+        "[STATS]"
+    };
+
+    eprintln!(
+        "{} processed={}/{} ({:.2}%) findings={} rps={:.1} avg_rps={:.1} avg_latency={:.1}ms delay={}ms 2xx={} 3xx={} 4xx={} 5xx={} 404={} blocks={} errors={} soft404_suppressed={}",
+        prefix,
+        processed,
+        total,
+        progress_pct,
+        progress.findings.load(Ordering::Relaxed),
+        current_rps,
+        average_rps,
+        avg_latency,
+        *delay_rx.borrow(),
+        progress.success_2xx.load(Ordering::Relaxed),
+        progress.redirect_3xx.load(Ordering::Relaxed),
+        progress.client_4xx.load(Ordering::Relaxed),
+        progress.server_5xx.load(Ordering::Relaxed),
+        progress.not_found_404.load(Ordering::Relaxed),
+        progress.blocked_responses.load(Ordering::Relaxed),
+        progress.transport_errors.load(Ordering::Relaxed),
+        progress.suppressed_soft_404.load(Ordering::Relaxed),
+    );
 }
 
 fn build_jobs(paths: &[String], rounds: usize) -> Vec<WorkItem> {
@@ -384,6 +583,7 @@ async fn worker_loop(
     processed_total: Arc<AtomicUsize>,
     rebuild_client_every: Option<usize>,
     scan_plan: ScanPlan,
+    progress: Arc<ProgressCounters>,
 ) -> Result<RunSummary> {
     let mut local = RunSummary::default();
 
@@ -407,6 +607,7 @@ async fn worker_loop(
         }
 
         local.record(&metric);
+        progress.record_metric(&metric);
 
         if let Some(interval) = rebuild_client_every {
             let processed = processed_total.fetch_add(1, Ordering::Relaxed) + 1;
@@ -439,6 +640,7 @@ fn spawn_neuro_actor(
     config: &AppConfig,
     scheduled_total: Arc<AtomicUsize>,
     findings_config: FindingsConfig,
+    progress: Arc<ProgressCounters>,
 ) -> JoinHandle<Result<NeuroTelemetry>> {
     let rsnn_config = RsnnConfig {
         hidden_size: 20,
@@ -536,9 +738,11 @@ fn spawn_neuro_actor(
                     );
                     finding_writer.record(&metric)?;
                     telemetry.record_finding();
+                    progress.record_finding();
                 }
                 FindingDecision::SuppressedSoft404 => {
                     telemetry.record_soft_404_suppression();
+                    progress.record_soft_404_suppression();
                 }
                 FindingDecision::FilteredByStatus | FindingDecision::FilteredByBodyLength => {}
             }

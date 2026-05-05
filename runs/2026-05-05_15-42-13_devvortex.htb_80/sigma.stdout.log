@@ -1,0 +1,150 @@
+[*] Sigma Morpho started
+[*] Target: http://devvortex.htb/
+[*] Client profile: research-default
+[*] Scan mode: vhost
+[*] VHost template: FUZZ.devvortex.htb
+[*] Workload: 100000 seed paths x 1 rounds, workers: 55, recursion depth: 0
+[*] Soft-404 baseline: status=302 bytes=154 fingerprint=2906063958500901661
+[FINDING] status=200 bytes=23221 latency=361ms path=host=dev.devvortex.htb
+[PROGRESS] processed=1000/100000 (1.00%) delay=25ms profile=baseline
+[PROGRESS] processed=2000/100000 (2.00%) delay=25ms profile=baseline
+[PROGRESS] processed=3000/100000 (3.00%) delay=25ms profile=baseline
+[PROGRESS] processed=4000/100000 (4.00%) delay=25ms profile=baseline
+[PROGRESS] processed=5000/100000 (5.00%) delay=25ms profile=baseline
+[PROGRESS] processed=6000/100000 (6.00%) delay=25ms profile=baseline
+[PROGRESS] processed=7000/100000 (7.00%) delay=25ms profile=baseline
+[PROGRESS] processed=8000/100000 (8.00%) delay=25ms profile=baseline
+[PROGRESS] processed=9000/100000 (9.00%) delay=25ms profile=baseline
+[PROGRESS] processed=10000/100000 (10.00%) delay=25ms profile=baseline
+[PROGRESS] processed=11000/100000 (11.00%) delay=50ms profile=cautious
+[PROGRESS] processed=12000/100000 (12.00%) delay=50ms profile=cautious
+[PROGRESS] processed=13000/100000 (13.00%) delay=50ms profile=cautious
+[PROGRESS] processed=14000/100000 (14.00%) delay=50ms profile=cautious
+[PROGRESS] processed=15000/100000 (15.00%) delay=50ms profile=cautious
+[PROGRESS] processed=16000/100000 (16.00%) delay=50ms profile=defensive
+[PROGRESS] processed=17000/100000 (17.00%) delay=50ms profile=cautious
+[PROGRESS] processed=18000/100000 (18.00%) delay=50ms profile=defensive
+[PROGRESS] processed=19000/100000 (19.00%) delay=50ms profile=cautious
+[PROGRESS] processed=20000/100000 (20.00%) delay=50ms profile=defensive
+[PROGRESS] processed=21000/100000 (21.00%) delay=50ms profile=cautious
+[PROGRESS] processed=22000/100000 (22.00%) delay=50ms profile=defensive
+[PROGRESS] processed=23000/100000 (23.00%) delay=50ms profile=cautious
+[PROGRESS] processed=24000/100000 (24.00%) delay=50ms profile=defensive
+[PROGRESS] processed=25000/100000 (25.00%) delay=50ms profile=cautious
+[PROGRESS] processed=26000/100000 (26.00%) delay=50ms profile=defensive
+[PROGRESS] processed=27000/100000 (27.00%) delay=50ms profile=cautious
+[PROGRESS] processed=28000/100000 (28.00%) delay=50ms profile=cautious
+[PROGRESS] processed=29000/100000 (29.00%) delay=50ms profile=cautious
+[PROGRESS] processed=30000/100000 (30.00%) delay=50ms profile=cautious
+[PROGRESS] processed=31000/100000 (31.00%) delay=50ms profile=cautious
+[PROGRESS] processed=32000/100000 (32.00%) delay=50ms profile=cautious
+[PROGRESS] processed=33000/100000 (33.00%) delay=50ms profile=cautious
+[PROGRESS] processed=34000/100000 (34.00%) delay=50ms profile=cautious
+[PROGRESS] processed=35000/100000 (35.00%) delay=50ms profile=cautious
+[PROGRESS] processed=36000/100000 (36.00%) delay=50ms profile=cautious
+[PROGRESS] processed=37000/100000 (37.00%) delay=50ms profile=cautious
+[PROGRESS] processed=38000/100000 (38.00%) delay=50ms profile=cautious
+[PROGRESS] processed=39000/100000 (39.00%) delay=50ms profile=defensive
+[PROGRESS] processed=40000/100000 (40.00%) delay=50ms profile=cautious
+[PROGRESS] processed=41000/100000 (41.00%) delay=50ms profile=defensive
+[PROGRESS] processed=42000/100000 (42.00%) delay=50ms profile=cautious
+[PROGRESS] processed=43000/100000 (43.00%) delay=50ms profile=defensive
+[PROGRESS] processed=44000/100000 (44.00%) delay=50ms profile=cautious
+[PROGRESS] processed=45000/100000 (45.00%) delay=50ms profile=cautious
+[PROGRESS] processed=46000/100000 (46.00%) delay=50ms profile=cautious
+[PROGRESS] processed=47000/100000 (47.00%) delay=50ms profile=cautious
+[PROGRESS] processed=48000/100000 (48.00%) delay=50ms profile=cautious
+[PROGRESS] processed=49000/100000 (49.00%) delay=50ms profile=cautious
+[PROGRESS] processed=50000/100000 (50.00%) delay=50ms profile=defensive
+[PROGRESS] processed=51000/100000 (51.00%) delay=50ms profile=cautious
+[PROGRESS] processed=52000/100000 (52.00%) delay=50ms profile=defensive
+[PROGRESS] processed=53000/100000 (53.00%) delay=50ms profile=cautious
+[PROGRESS] processed=54000/100000 (54.00%) delay=50ms profile=defensive
+[PROGRESS] processed=55000/100000 (55.00%) delay=50ms profile=cautious
+[PROGRESS] processed=56000/100000 (56.00%) delay=50ms profile=defensive
+[PROGRESS] processed=57000/100000 (57.00%) delay=50ms profile=cautious
+[PROGRESS] processed=58000/100000 (58.00%) delay=50ms profile=defensive
+[PROGRESS] processed=59000/100000 (59.00%) delay=50ms profile=cautious
+[PROGRESS] processed=60000/100000 (60.00%) delay=50ms profile=defensive
+[PROGRESS] processed=61000/100000 (61.00%) delay=50ms profile=cautious
+[PROGRESS] processed=62000/100000 (62.00%) delay=50ms profile=cautious
+[PROGRESS] processed=63000/100000 (63.00%) delay=50ms profile=cautious
+[PROGRESS] processed=64000/100000 (64.00%) delay=50ms profile=cautious
+[PROGRESS] processed=65000/100000 (65.00%) delay=50ms profile=cautious
+[PROGRESS] processed=66000/100000 (66.00%) delay=50ms profile=cautious
+[PROGRESS] processed=67000/100000 (67.00%) delay=50ms profile=cautious
+[PROGRESS] processed=68000/100000 (68.00%) delay=50ms profile=cautious
+[PROGRESS] processed=69000/100000 (69.00%) delay=50ms profile=cautious
+[PROGRESS] processed=70000/100000 (70.00%) delay=50ms profile=cautious
+[PROGRESS] processed=71000/100000 (71.00%) delay=50ms profile=cautious
+[PROGRESS] processed=72000/100000 (72.00%) delay=50ms profile=cautious
+[PROGRESS] processed=73000/100000 (73.00%) delay=50ms profile=defensive
+[PROGRESS] processed=74000/100000 (74.00%) delay=50ms profile=cautious
+[PROGRESS] processed=75000/100000 (75.00%) delay=50ms profile=defensive
+[PROGRESS] processed=76000/100000 (76.00%) delay=50ms profile=cautious
+[PROGRESS] processed=77000/100000 (77.00%) delay=50ms profile=defensive
+[PROGRESS] processed=78000/100000 (78.00%) delay=50ms profile=cautious
+[PROGRESS] processed=79000/100000 (79.00%) delay=50ms profile=defensive
+[PROGRESS] processed=80000/100000 (80.00%) delay=50ms profile=cautious
+[PROGRESS] processed=81000/100000 (81.00%) delay=50ms profile=defensive
+[PROGRESS] processed=82000/100000 (82.00%) delay=50ms profile=cautious
+[PROGRESS] processed=83000/100000 (83.00%) delay=50ms profile=defensive
+[PROGRESS] processed=84000/100000 (84.00%) delay=50ms profile=cautious
+[PROGRESS] processed=85000/100000 (85.00%) delay=50ms profile=cautious
+[PROGRESS] processed=86000/100000 (86.00%) delay=50ms profile=cautious
+[PROGRESS] processed=87000/100000 (87.00%) delay=50ms profile=cautious
+[PROGRESS] processed=88000/100000 (88.00%) delay=50ms profile=cautious
+[PROGRESS] processed=89000/100000 (89.00%) delay=50ms profile=cautious
+[PROGRESS] processed=90000/100000 (90.00%) delay=50ms profile=cautious
+[PROGRESS] processed=91000/100000 (91.00%) delay=50ms profile=cautious
+[PROGRESS] processed=92000/100000 (92.00%) delay=50ms profile=cautious
+[PROGRESS] processed=93000/100000 (93.00%) delay=50ms profile=cautious
+[PROGRESS] processed=94000/100000 (94.00%) delay=50ms profile=cautious
+[PROGRESS] processed=95000/100000 (95.00%) delay=50ms profile=cautious
+[PROGRESS] processed=96000/100000 (96.00%) delay=50ms profile=defensive
+[PROGRESS] processed=97000/100000 (97.00%) delay=50ms profile=cautious
+[PROGRESS] processed=98000/100000 (98.00%) delay=50ms profile=defensive
+[PROGRESS] processed=99000/100000 (99.00%) delay=50ms profile=cautious
+[PROGRESS] processed=100000/100000 (100.00%) delay=50ms profile=defensive
+
+===== Sigma Morpho Summary =====
+Elapsed: 281.75s
+Client profile: research-default
+Speed mode: aggressive
+Simulation mode: false
+Findings file: /home/warmond/AI-Research/Sigma-Morpho/runs/2026-05-05_15-42-13_devvortex.htb_80/findings.txt
+Recursion depth: 0
+Soft-404 filter active: true
+Total requests: 100000
+Discovered jobs: 100000
+2xx: 1
+3xx: 99999
+4xx: 0
+404s: 0
+Protective block signals (403/429/503): 0
+5xx: 0
+Transport errors: 0
+Avg latency: 105.43 ms
+Min latency: 33 ms
+Max latency: 1405 ms
+Total body bytes: 15423067
+Final adaptive delay: 50 ms
+Final adaptive profile: defensive
+Neuro decisions: 100000
+Throttle increases: 89581
+Throttle decreases: 1
+Cautious entries: 3932
+Defensive entries: 3932
+Baseline recoveries: 0
+Latency burst events: 89
+Block burst events: 0
+404 burst events: 0
+Logged findings: 1
+Suppressed soft-404 matches: 99999
+Client rebuilds: 0
+Simulated action events: 0
+Simulated rotate advisories: 0
+Simulated circuit advisories: 0
+200 hits:
+  - host=dev.devvortex.htb
+

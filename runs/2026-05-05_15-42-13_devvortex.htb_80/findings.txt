@@ -1,0 +1,8 @@
+# Sigma Morpho findings
+# statuses=200,204,301,302,307,308,401,403,405,500
+# min_body_bytes=0
+# max_body_bytes=none
+# filter_words=none
+# soft_404_filter=true
+# soft_404_baseline status=302 bytes=154 fingerprint=2906063958500901661
+status=200 bytes=23221 words=1581 latency_ms=361 fingerprint=15418138300838104308 path=host=dev.devvortex.htb

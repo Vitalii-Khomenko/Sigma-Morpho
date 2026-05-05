@@ -1,9 +1,0 @@
-# Sigma Morpho findings
-# statuses=200,204,301,302,307,308,401,403,405,500
-# min_body_bytes=0
-# max_body_bytes=none
-# soft_404_filter=true
-# soft_404_baseline status=404 bytes=162 fingerprint=9898183145201488758
-status=301 bytes=178 latency_ms=42 fingerprint=16111026192509554361 path=/images
-status=301 bytes=178 latency_ms=61 fingerprint=16111026192509554361 path=/js
-status=301 bytes=178 latency_ms=118 fingerprint=16111026192509554361 path=/css
